@@ -1,0 +1,23 @@
+# Binary
+anyclaw
+*.exe
+
+# Go
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config with secrets
+*.local.yaml
+*.local.toml
+*.local.json
+.env

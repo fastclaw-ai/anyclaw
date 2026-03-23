@@ -1,0 +1,27 @@
+name: translator
+description: "Translation service - translate text between languages"
+
+backend:
+  type: http
+  base_url: https://api.mymemory.translated.net
+  # No auth needed for this free API
+
+skills:
+  - name: translate
+    description: "Translate text from one language to another"
+    input:
+      text:
+        type: string
+        required: true
+        description: "Text to translate"
+      from:
+        type: string
+        required: true
+        description: "Source language code (e.g. en, zh, ja)"
+      to:
+        type: string
+        required: true
+        description: "Target language code (e.g. en, zh, ja)"
+    backend:
+      method: GET
+      path: /get
