@@ -38,7 +38,19 @@ func (c *Client) Execute(ctx context.Context, skill *config.Skill, params map[st
 		method = "POST"
 	}
 
-	url := c.baseURL + skill.Backend.Path
+	path := skill.Backend.Path
+	// Substitute path parameters like {petId} and remove them from params
+	remaining := make(map[string]any, len(params))
+	for k, v := range params {
+		placeholder := "{" + k + "}"
+		if strings.Contains(path, placeholder) {
+			path = strings.ReplaceAll(path, placeholder, fmt.Sprintf("%v", v))
+		} else {
+			remaining[k] = v
+		}
+	}
+	params = remaining
+	url := c.baseURL + path
 
 	var body io.Reader
 	if method == "POST" || method == "PUT" || method == "PATCH" {
@@ -85,9 +97,13 @@ func (c *Client) Execute(ctx context.Context, skill *config.Skill, params map[st
 
 	var data map[string]any
 	if err := json.Unmarshal(respBody, &data); err == nil {
-		pretty, _ := json.MarshalIndent(data, "", "  ")
+		content := extractContent(skill, data)
+		if content == "" {
+			pretty, _ := json.MarshalIndent(data, "", "  ")
+			content = string(pretty)
+		}
 		return &backend.Response{
-			Content: string(pretty),
+			Content: content,
 			Data:    data,
 		}, nil
 	}
@@ -95,6 +111,36 @@ func (c *Client) Execute(ctx context.Context, skill *config.Skill, params map[st
 	return &backend.Response{
 		Content: string(respBody),
 	}, nil
+}
+
+// extractContent extracts a specific field from the response JSON based on skill config.
+func extractContent(skill *config.Skill, data map[string]any) string {
+	if skill.Backend.Response == nil || skill.Backend.Response.Field == "" {
+		return ""
+	}
+
+	// Walk the dot-separated path
+	parts := strings.Split(skill.Backend.Response.Field, ".")
+	var current any = data
+	for _, part := range parts {
+		m, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current, ok = m[part]
+		if !ok {
+			return ""
+		}
+	}
+
+	value := fmt.Sprintf("%v", current)
+
+	// Apply template if specified
+	if skill.Backend.Response.Template != "" {
+		return strings.ReplaceAll(skill.Backend.Response.Template, "{{.value}}", value)
+	}
+
+	return value
 }
 
 func (c *Client) applyAuth(req *http.Request) {

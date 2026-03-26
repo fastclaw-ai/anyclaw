@@ -3,51 +3,35 @@ package config
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
-// Load reads a config file (YAML/TOML/JSON) and returns the parsed Config.
+// Load reads an OpenAPI spec file (YAML) and returns the parsed Config.
 func Load(path string) (*Config, error) {
-	v := viper.New()
-
-	ext := strings.TrimPrefix(filepath.Ext(path), ".")
-	if ext == "yml" {
-		ext = "yaml"
-	}
-	v.SetConfigType(ext)
-
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("open config %s: %w", path, err)
 	}
-	defer f.Close()
 
-	if err := v.ReadConfig(f); err != nil {
+	var spec openAPISpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
 
-	var cfg Config
-	if err := v.Unmarshal(&cfg); err != nil {
-		return nil, fmt.Errorf("unmarshal config: %w", err)
+	if spec.OpenAPI == "" {
+		return nil, fmt.Errorf("invalid config %s: missing 'openapi' field (only OpenAPI 3.x format is supported)", path)
 	}
 
-	if cfg.Backend.Type == "" {
-		cfg.Backend.Type = "http"
-	}
-
-	return &cfg, nil
+	return fromOpenAPI(&spec), nil
 }
 
 // FromURL creates a minimal config for a single HTTP backend URL.
-// Used when the user runs: anyclaw --mcp https://example.com
-func FromURL(url string) *Config {
+func FromURL(rawURL string) *Config {
 	name := "api"
-	// Try to derive name from hostname
-	if strings.Contains(url, "://") {
-		parts := strings.SplitN(url, "://", 2)
+	if strings.Contains(rawURL, "://") {
+		parts := strings.SplitN(rawURL, "://", 2)
 		if len(parts) == 2 {
 			host := strings.SplitN(parts[1], "/", 2)[0]
 			host = strings.SplitN(host, ":", 2)[0]
@@ -60,10 +44,10 @@ func FromURL(url string) *Config {
 
 	return &Config{
 		Name:        name,
-		Description: fmt.Sprintf("Proxy to %s", url),
+		Description: fmt.Sprintf("Proxy to %s", rawURL),
 		Backend: Backend{
 			Type:    "http",
-			BaseURL: url,
+			BaseURL: rawURL,
 		},
 		Skills: []Skill{
 			{

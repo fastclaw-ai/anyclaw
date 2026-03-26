@@ -1,27 +1,28 @@
-name: translator
-description: "Translation service - translate text between languages"
+openapi: 3.0.0
+info:
+  title: Translator
+  description: Translation service - translate text between languages
+  version: "1.0"
 
-backend:
-  type: http
-  base_url: https://api.mymemory.translated.net
-  # No auth needed for this free API
+servers:
+  - url: https://api.mymemory.translated.net
 
-skills:
-  - name: translate
-    description: "Translate text from one language to another"
-    input:
-      text:
-        type: string
-        required: true
-        description: "Text to translate"
-      from:
-        type: string
-        required: true
-        description: "Source language code (e.g. en, zh, ja)"
-      to:
-        type: string
-        required: true
-        description: "Target language code (e.g. en, zh, ja)"
-    backend:
-      method: GET
-      path: /get
+paths:
+  /get:
+    get:
+      operationId: translate
+      summary: Translate text from one language to another
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Text to translate
+          schema:
+            type: string
+        - name: langpair
+          in: query
+          required: true
+          description: "Language pair in format source|target (e.g. en|zh)"
+          schema:
+            type: string
+            default: "en|zh"

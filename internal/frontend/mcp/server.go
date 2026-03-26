@@ -41,20 +41,17 @@ func (s *Server) registerSkill(skill config.Skill) {
 		mcp.WithDescription(skill.Description),
 	}
 
-	var requiredFields []string
-
 	for name, field := range skill.Input {
-		opts = append(opts, mcp.WithString(name, mcp.Description(field.Description)))
+		propOpts := []mcp.PropertyOption{
+			mcp.Description(field.Description),
+		}
 		if field.Required {
-			requiredFields = append(requiredFields, name)
+			propOpts = append(propOpts, mcp.Required())
 		}
-	}
-
-	// Add required constraint
-	if len(requiredFields) > 0 {
-		for _, name := range requiredFields {
-			opts = append(opts, mcp.WithString(name, mcp.Required()))
+		if field.Default != "" {
+			propOpts = append(propOpts, mcp.DefaultString(field.Default))
 		}
+		opts = append(opts, mcp.WithString(name, propOpts...))
 	}
 
 	tool := mcp.NewTool(skill.Name, opts...)

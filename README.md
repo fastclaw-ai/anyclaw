@@ -1,13 +1,13 @@
 # anyclaw
 
-Agent protocol reverse proxy. Make any HTTP API callable by agent platforms via ACP, MCP, or HTTP.
+Agent protocol reverse proxy. Make any HTTP API callable by agent platforms via MCP.
 
 ```
 Agent Platforms                    anyclaw                         Your API
                           ┌─────────────────────────┐
-weclaw/Zed   ── ACP ──→  │                         │
-Claude Code  ── MCP ──→  │  anyclaw (reverse proxy) │ ──→  HTTP API
-Web Apps     ── HTTP ──→  │                         │
+Claude Code  ── MCP ──→  │                         │
+Cursor       ── MCP ──→  │  anyclaw (reverse proxy) │ ──→  HTTP API
+Any MCP Host ── MCP ──→  │                         │
                           └─────────────────────────┘
 ```
 
@@ -33,61 +33,54 @@ cd anyclaw
 go build -o anyclaw .
 ```
 
-## Update
-
-```bash
-anyclaw update
-# or
-anyclaw upgrade
-```
-
 ## Quick Start
 
-### 1. Write a config file
+### 1. Write an OpenAPI spec
+
+anyclaw uses standard [OpenAPI 3.x](https://spec.openapis.org/oas/v3.0.4.html) as its config format. Any existing OpenAPI spec works out of the box.
 
 ```yaml
 # translator.yaml
-name: translator
-description: "Translation service"
+openapi: 3.0.0
+info:
+  title: Translator
+  description: Translation service
+  version: "1.0"
 
-backend:
-  type: http
-  base_url: https://api.mymemory.translated.net
+servers:
+  - url: https://api.mymemory.translated.net
 
-skills:
-  - name: translate
-    description: "Translate text between languages"
-    input:
-      q:
-        type: string
-        required: true
-        description: "Text to translate"
-      langpair:
-        type: string
-        required: true
-        description: "Language pair (e.g. en|zh)"
-    backend:
-      method: GET
-      path: /get
+paths:
+  /get:
+    get:
+      operationId: translate
+      summary: Translate text between languages
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Text to translate
+          schema:
+            type: string
+        - name: langpair
+          in: query
+          required: true
+          description: "Language pair (e.g. en|zh)"
+          schema:
+            type: string
+            default: "en|zh"
 ```
 
-### 2. Run in your preferred mode
+### 2. Start MCP server
 
 ```bash
-# MCP server (for Claude Code / Cursor)
 anyclaw mcp --config translator.yaml
-
-# ACP agent (for weclaw / Zed)
-anyclaw acp --config translator.yaml
-
-# HTTP API (for any web app)
-anyclaw http --config translator.yaml --port 8080
 ```
 
 ### 3. Generate SKILL.md
 
 ```bash
-anyclaw gen --config translator.yaml
+anyclaw skill --config translator.yaml
 ```
 
 ## Integration
@@ -107,83 +100,64 @@ Add to your MCP settings:
 }
 ```
 
-### weclaw
+## Commands
 
-Add to `~/.weclaw/config.json`:
-
-```json
-{
-  "agents": {
-    "translator": {
-      "type": "acp",
-      "command": "anyclaw",
-      "args": ["acp", "--config", "/path/to/translator.yaml"]
-    }
-  }
-}
-```
-
-### HTTP
-
-```bash
-anyclaw http --config translator.yaml --port 8080
-
-# List skills
-curl http://localhost:8080/skills
-
-# Execute a skill
-curl -X POST http://localhost:8080/skills/translate/execute \
-  -H "Content-Type: application/json" \
-  -d '{"q": "Hello", "langpair": "en|zh"}'
-```
+| Command | Description |
+|---------|-------------|
+| `anyclaw mcp -c spec.yaml` | Start MCP server (stdio) |
+| `anyclaw skill -c spec.yaml` | Generate SKILL.md from spec |
+| `anyclaw skill -c spec.yaml -o dir/` | Generate SKILL.md to custom path |
+| `anyclaw version` | Print version info |
+| `anyclaw update` | Self-update to latest release |
+| `anyclaw upgrade` | Alias for `update` |
 
 ## Config Format
 
-anyclaw supports YAML, TOML, and JSON config files.
+anyclaw uses **OpenAPI 3.x** as the only config format. Each `path + method` becomes an MCP tool.
+
+| OpenAPI | anyclaw |
+|---------|---------|
+| `info.title` | Server name |
+| `servers[0].url` | Backend base URL |
+| `operationId` | Tool name |
+| `parameters` | Tool input fields |
+| `requestBody` | Tool input fields (POST) |
+| `components.securitySchemes` | Auth config |
+| Path params `{id}` | Auto-substituted at runtime |
+
+### Authentication
 
 ```yaml
-name: my-service
-description: "Service description"
-
-backend:
-  type: http
-  base_url: https://api.example.com
-  auth:
-    type: bearer          # bearer, basic, or api_key
-    token_env: API_KEY    # reads token from this env var
-
-skills:
-  - name: skill-name
-    description: "What this skill does"
-    input:
-      param1:
-        type: string
-        required: true
-        description: "Parameter description"
-    backend:
-      method: POST
-      path: /api/endpoint
+components:
+  securitySchemes:
+    bearer_auth:
+      type: http
+      scheme: bearer    # reads token from $API_TOKEN env var
+    api_key:
+      type: apiKey
+      name: X-API-Key   # header name
+      in: header        # reads key from $API_KEY env var
 ```
 
 ## Architecture
 
 ```
 main.go
-cmd/                        # CLI commands (cobra)
-  acp.go                    # anyclaw acp
+cmd/
   mcp.go                    # anyclaw mcp
-  http.go                   # anyclaw http
-  gen.go                    # anyclaw gen
+  gen.go                    # anyclaw skill (generate SKILL.md)
+  version.go                # anyclaw version
+  update.go                 # anyclaw update/upgrade
 internal/
-  config/                   # Config loading (viper)
+  config/                   # OpenAPI spec parsing
+    openapi.go              # OpenAPI 3.x → internal Config
   core/                     # Router: skill lookup + dispatch
   frontend/
-    acp/                    # ACP JSON-RPC over stdio
     mcp/                    # MCP server via mcp-go
-    httpapi/                # REST API server
   backend/
     http/                   # HTTP backend client
   gen/                      # SKILL.md generator
+  version/                  # Build-time version info
 ```
 
 ## License
