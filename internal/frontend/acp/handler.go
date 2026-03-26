@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/fastclaw-ai/anyclaw/internal/config"
 	"github.com/fastclaw-ai/anyclaw/internal/core"
+	"github.com/fastclaw-ai/anyclaw/internal/version"
 	"github.com/google/uuid"
 )
 
@@ -37,7 +39,7 @@ func (h *handler) handleInitialize(id json.RawMessage, params json.RawMessage) (
 		AgentInfo: agentInfo{
 			Name:    cfg.Name,
 			Title:   cfg.Description,
-			Version: "0.1.0",
+			Version: version.Version,
 		},
 		AuthMethods: []any{},
 	}, nil
@@ -115,21 +117,7 @@ func (h *handler) handlePrompt(ctx context.Context, params json.RawMessage, noti
 func (h *handler) resolveSkill(message string) (string, map[string]any) {
 	skills := h.router.ListSkills()
 
-	// Single skill: always use it
-	if len(skills) == 1 {
-		return skills[0].Name, map[string]any{"text": message}
-	}
-
-	// Try to match skill name at start of message
-	lower := strings.ToLower(message)
-	for _, s := range skills {
-		if strings.HasPrefix(lower, strings.ToLower(s.Name)) {
-			rest := strings.TrimSpace(message[len(s.Name):])
-			return s.Name, map[string]any{"text": rest}
-		}
-	}
-
-	// Try JSON params: {"skill": "translate", "params": {...}}
+	// Try JSON params first: {"skill": "translate", "params": {...}}
 	var structured struct {
 		Skill  string         `json:"skill"`
 		Params map[string]any `json:"params"`
@@ -138,9 +126,49 @@ func (h *handler) resolveSkill(message string) (string, map[string]any) {
 		return structured.Skill, structured.Params
 	}
 
-	// Fallback: return help
+	// Single skill: map message to its input fields
+	if len(skills) == 1 {
+		return skills[0].Name, buildParams(skills[0], message)
+	}
+
+	// Try to match skill name at start of message
+	lower := strings.ToLower(message)
+	for _, s := range skills {
+		if strings.HasPrefix(lower, strings.ToLower(s.Name)) {
+			rest := strings.TrimSpace(message[len(s.Name):])
+			return s.Name, buildParams(s, rest)
+		}
+	}
+
+	// Fallback: use first skill
 	names := h.router.SkillNames()
 	return skills[0].Name, map[string]any{
 		"text": fmt.Sprintf("Available skills: %s. Message: %s", strings.Join(names, ", "), message),
 	}
+}
+
+// buildParams maps a plain text message to a skill's input fields.
+// It assigns the message to the first required string field, and fills
+// any other fields that have defaults.
+func buildParams(skill config.Skill, message string) map[string]any {
+	params := make(map[string]any)
+
+	// Fill defaults first
+	for name, field := range skill.Input {
+		if field.Default != "" {
+			params[name] = field.Default
+		}
+	}
+
+	// Assign message to the first required string field
+	for name, field := range skill.Input {
+		if field.Required && field.Type == "string" {
+			if _, hasDefault := params[name]; !hasDefault {
+				params[name] = message
+				break
+			}
+		}
+	}
+
+	return params
 }

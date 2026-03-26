@@ -13,6 +13,14 @@ Web Apps     ── HTTP ──→  │                         │
 
 ## Install
 
+One-line install (macOS / Linux):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/.github/install.sh | bash
+```
+
+Or via `go install`:
+
 ```bash
 go install github.com/fastclaw-ai/anyclaw@latest
 ```
@@ -23,6 +31,14 @@ Or build from source:
 git clone https://github.com/fastclaw-ai/anyclaw.git
 cd anyclaw
 go build -o anyclaw .
+```
+
+## Update
+
+```bash
+anyclaw update
+# or
+anyclaw upgrade
 ```
 
 ## Quick Start
