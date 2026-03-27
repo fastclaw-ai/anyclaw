@@ -1,0 +1,28 @@
+openapi: 3.0.0
+info:
+  title: Translator
+  description: Translation service - translate text between languages
+  version: "1.0"
+
+servers:
+  - url: https://api.mymemory.translated.net
+
+paths:
+  /get:
+    get:
+      operationId: translate
+      summary: Translate text from one language to another
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Text to translate
+          schema:
+            type: string
+        - name: langpair
+          in: query
+          required: true
+          description: "Language pair in format source|target (e.g. en|zh)"
+          schema:
+            type: string
+            default: "en|zh"

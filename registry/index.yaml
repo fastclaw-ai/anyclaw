@@ -1,0 +1,201 @@
+packages:
+  # === anyclaw native ===
+  - name: translator
+    description: "Translation service - translate text between languages"
+    type: openapi
+    source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/translator/openapi.yaml
+    tags: [translation, nlp, language]
+
+  # === opencli community (source in opencli repo, YAML only) ===
+  - name: hackernews
+    description: "Hacker News - top stories, search, jobs, and more"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/hackernews
+    tags: [news, tech, social]
+
+  - name: lobsters
+    description: "Lobsters - computing-focused link aggregation"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/lobsters
+    tags: [news, tech, programming]
+
+  - name: stackoverflow
+    description: "Stack Overflow - programming Q&A"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/stackoverflow
+    tags: [programming, qa, tech]
+
+  - name: v2ex
+    description: "V2EX - developer community"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/v2ex
+    tags: [community, developer, chinese]
+
+  - name: bilibili
+    description: "Bilibili - 热门视频"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/bilibili
+    tags: [video, chinese, social]
+
+  - name: douban
+    description: "豆瓣 - 电影、书籍、音乐"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/douban
+    tags: [movie, book, chinese, social]
+
+  - name: weibo
+    description: "微博 - 热搜、动态"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/weibo
+    tags: [social, chinese, news]
+
+  - name: zhihu
+    description: "知乎 - 问答社区"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/zhihu
+    tags: [qa, chinese, social]
+
+  - name: twitter
+    description: "Twitter/X - social media"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/twitter
+    tags: [social, news]
+
+  - name: reddit
+    description: "Reddit - community discussions"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/reddit
+    tags: [social, news, community]
+
+  - name: youtube
+    description: "YouTube - video platform"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/youtube
+    tags: [video, social]
+
+  - name: instagram
+    description: "Instagram - photos and stories"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/instagram
+    tags: [social, photo]
+
+  - name: linkedin
+    description: "LinkedIn - professional network"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/linkedin
+    tags: [social, career, professional]
+
+  - name: medium
+    description: "Medium - articles and blogs"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/medium
+    tags: [blog, articles, tech]
+
+  - name: arxiv
+    description: "arXiv - scientific papers"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/arxiv
+    tags: [science, research, papers]
+
+  - name: wikipedia
+    description: "Wikipedia - encyclopedia"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/wikipedia
+    tags: [reference, knowledge]
+
+  - name: imdb
+    description: "IMDb - movie database"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/imdb
+    tags: [movie, entertainment]
+
+  - name: producthunt
+    description: "Product Hunt - new products"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/producthunt
+    tags: [product, startup, tech]
+
+  - name: devto
+    description: "Dev.to - developer articles"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/devto
+    tags: [developer, blog, tech]
+
+  - name: xiaohongshu
+    description: "小红书 - 生活分享"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/xiaohongshu
+    tags: [social, chinese, lifestyle]
+
+  - name: douyin
+    description: "抖音 - 短视频"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/douyin
+    tags: [video, chinese, social]
+
+  - name: tiktok
+    description: "TikTok - short videos"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/tiktok
+    tags: [video, social]
+
+  - name: facebook
+    description: "Facebook - social network"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/facebook
+    tags: [social]
+
+  - name: steam
+    description: "Steam - gaming platform"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/steam
+    tags: [gaming, entertainment]
+
+  - name: jd
+    description: "京东 - 电商"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/jd
+    tags: [shopping, chinese, ecommerce]
+
+  - name: ctrip
+    description: "携程 - 旅行出行"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/ctrip
+    tags: [travel, chinese]
+
+  - name: bbc
+    description: "BBC - news"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/bbc
+    tags: [news, media]
+
+  - name: bloomberg
+    description: "Bloomberg - financial news"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/bloomberg
+    tags: [finance, news]
+
+  - name: reuters
+    description: "Reuters - news agency"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/reuters
+    tags: [news, media]
+
+  - name: xueqiu
+    description: "雪球 - 股票投资"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/xueqiu
+    tags: [finance, chinese, stock]
+
+  - name: sinafinance
+    description: "新浪财经 - 财经资讯"
+    type: github
+    source: https://github.com/jackwener/opencli/tree/main/src/clis/sinafinance
+    tags: [finance, chinese, news]
+
+  # === third-party plugins ===
+  - name: juejin
+    description: "掘金 - 开发者社区"
+    type: github
+    source: https://github.com/Astro-Han/opencli-plugin-juejin
+    tags: [developer, chinese, tech, articles]

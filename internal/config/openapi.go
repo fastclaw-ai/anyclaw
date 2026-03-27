@@ -64,10 +64,27 @@ type openAPIComponents struct {
 }
 
 type openAPISecurityScheme struct {
-	Type   string `yaml:"type"`   // apiKey, http
-	Scheme string `yaml:"scheme"` // bearer, basic
-	Name   string `yaml:"name"`   // header name for apiKey
-	In     string `yaml:"in"`     // header, query
+	Type        string `yaml:"type"`        // apiKey, http
+	Scheme      string `yaml:"scheme"`      // bearer, basic
+	Name        string `yaml:"name"`        // header name for apiKey
+	In          string `yaml:"in"`          // header, query
+	Description string `yaml:"description"` // e.g. "Fal Key"
+}
+
+// AuthHint returns a human-readable hint for the auth format.
+func (a *Auth) AuthHint() string {
+	switch a.Type {
+	case "bearer":
+		return "<your-token>"
+	case "basic":
+		return "<base64-encoded>"
+	case "api_key":
+		if a.Prefix != "" {
+			return a.Prefix + " <your-api-key>"
+		}
+		return "<your-api-key>"
+	}
+	return "<your-api-key>"
 }
 
 // fromOpenAPI converts an OpenAPI spec into an anyclaw Config.
@@ -186,9 +203,9 @@ func convertSecurityScheme(scheme openAPISecurityScheme) *Auth {
 	case "http":
 		switch scheme.Scheme {
 		case "bearer":
-			return &Auth{Type: "bearer", TokenEnv: "API_TOKEN"}
+			return &Auth{Type: "bearer", TokenEnv: "API_TOKEN", Prefix: "Bearer"}
 		case "basic":
-			return &Auth{Type: "basic", TokenEnv: "API_TOKEN"}
+			return &Auth{Type: "basic", TokenEnv: "API_TOKEN", Prefix: "Basic"}
 		}
 	case "apiKey":
 		return &Auth{Type: "api_key", Header: scheme.Name, TokenEnv: "API_KEY"}

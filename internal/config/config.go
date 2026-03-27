@@ -20,6 +20,7 @@ type Auth struct {
 	Type     string // "bearer", "basic", "api_key"
 	TokenEnv string // env var name holding the token
 	Header   string // custom header name (for api_key type)
+	Prefix   string // token prefix (e.g. "Key", "Bearer")
 }
 
 // Skill describes a single capability exposed by the agent.

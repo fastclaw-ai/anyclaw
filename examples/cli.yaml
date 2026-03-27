@@ -1,0 +1,22 @@
+# anyclaw format - CLI wrapper commands
+anyclaw: "1.0"
+name: git-helper
+description: Git shortcuts
+
+commands:
+  - name: recent
+    description: Show recent commits
+    args:
+      count:
+        type: int
+        default: 10
+        description: Number of commits to show
+    run: "git log --oneline -n {{count}}"
+
+  - name: branches
+    description: List branches sorted by last commit
+    run: "git branch --sort=-committerdate"
+
+  - name: diff-stat
+    description: Show diff stats for staged changes
+    run: "git diff --cached --stat"

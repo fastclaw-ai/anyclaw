@@ -1,0 +1,43 @@
+# anyclaw format - script commands
+# Scripts receive args as JSON via stdin, output result to stdout
+anyclaw: "1.0"
+name: ip-tools
+description: IP address utilities
+
+commands:
+  - name: myip
+    description: Get your public IP address and location
+    script:
+      runtime: python
+      code: |
+        import urllib.request, json
+        data = json.load(urllib.request.urlopen("https://ipinfo.io/json"))
+        print(json.dumps({
+            "ip": data.get("ip"),
+            "city": data.get("city"),
+            "region": data.get("region"),
+            "country": data.get("country"),
+            "org": data.get("org")
+        }, indent=2))
+
+  - name: lookup
+    description: Look up info for a specific IP address
+    args:
+      ip:
+        type: string
+        required: true
+        description: IP address to look up
+    script:
+      runtime: python
+      code: |
+        import urllib.request, json, sys
+        args = json.load(sys.stdin)
+        ip = args.get("ip", "")
+        data = json.load(urllib.request.urlopen(f"https://ipinfo.io/{ip}/json"))
+        print(json.dumps({
+            "ip": data.get("ip"),
+            "city": data.get("city"),
+            "region": data.get("region"),
+            "country": data.get("country"),
+            "org": data.get("org")
+        }, indent=2))

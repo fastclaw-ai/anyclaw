@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/fastclaw-ai/anyclaw/internal/config"
+	"github.com/fastclaw-ai/anyclaw/internal/pkg"
 )
 
 // WriteSkillMD writes a Claude Code compatible SKILL.md from the config.
@@ -169,6 +170,92 @@ func writeSkill(w io.Writer, cfg *config.Config, skill *config.Skill) {
 func sortedFieldNames(input map[string]config.Field) []string {
 	names := make([]string, 0, len(input))
 	for name := range input {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// WriteManifestSkillMD generates a SKILL.md from a package manifest.
+func WriteManifestSkillMD(w io.Writer, m *pkg.Manifest) {
+	fmt.Fprintf(w, "---\n")
+	fmt.Fprintf(w, "name: %s\n", m.Name)
+	fmt.Fprintf(w, "description: %s\n", m.Description)
+	fmt.Fprintf(w, "---\n\n")
+
+	fmt.Fprintf(w, "# %s\n\n", m.Name)
+	if m.Description != "" {
+		fmt.Fprintf(w, "%s\n\n", m.Description)
+	}
+
+	// Instructions based on adapter type
+	switch m.InferAdapter() {
+	case "openapi":
+		fmt.Fprintf(w, "When the user's request matches one of the commands below, use `anyclaw run %s <command>` to execute. Parse the response and reply in natural language.\n\n", m.Name)
+	case "opencli", "cli":
+		fmt.Fprintf(w, "When the user's request matches one of the commands below, use `anyclaw run %s <command>` to execute. Parse the response and reply in natural language.\n\n", m.Name)
+	case "script":
+		fmt.Fprintf(w, "When the user's request matches one of the commands below, use `anyclaw run %s <command>` to execute.\n\n", m.Name)
+	}
+
+	fmt.Fprintf(w, "## Available Commands\n\n")
+
+	for _, cmd := range m.Commands {
+		writeManifestCommand(w, m.Name, &cmd)
+	}
+}
+
+func writeManifestCommand(w io.Writer, pkgName string, cmd *pkg.Command) {
+	fmt.Fprintf(w, "### %s\n\n", cmd.Name)
+	if cmd.Description != "" {
+		fmt.Fprintf(w, "%s\n\n", cmd.Description)
+	}
+
+	// Parameters
+	if len(cmd.Args) > 0 {
+		fmt.Fprintf(w, "**Parameters:**\n\n")
+		names := sortedArgNames(cmd.Args)
+		for _, name := range names {
+			arg := cmd.Args[name]
+			parts := []string{}
+			if arg.Type != "" {
+				parts = append(parts, arg.Type)
+			}
+			if arg.Required {
+				parts = append(parts, "required")
+			}
+			if arg.Default != "" {
+				parts = append(parts, fmt.Sprintf("default: %q", arg.Default))
+			}
+			meta := ""
+			if len(parts) > 0 {
+				meta = fmt.Sprintf(" (%s)", strings.Join(parts, ", "))
+			}
+			desc := ""
+			if arg.Description != "" {
+				desc = " - " + arg.Description
+			}
+			fmt.Fprintf(w, "- `%s`%s%s\n", name, meta, desc)
+		}
+		fmt.Fprintf(w, "\n")
+	}
+
+	// Usage example
+	fmt.Fprintf(w, "**Usage:**\n\n")
+	fmt.Fprintf(w, "```bash\nanyclaw run %s %s", pkgName, cmd.Name)
+	names := sortedArgNames(cmd.Args)
+	for _, name := range names {
+		arg := cmd.Args[name]
+		if arg.Required {
+			fmt.Fprintf(w, " --%s <value>", name)
+		}
+	}
+	fmt.Fprintf(w, "\n```\n\n")
+}
+
+func sortedArgNames(args map[string]pkg.Arg) []string {
+	names := make([]string, 0, len(args))
+	for name := range args {
 		names = append(names, name)
 	}
 	sort.Strings(names)
