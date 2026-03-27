@@ -1,6 +1,6 @@
 # anyclaw
 
-The universal tool adapter for AI agents. Turn any API, website, or CLI into agent-ready tools via MCP, Skills, and more.
+The universal tool adapter for AI agents. Turn any API, website, script into agent-ready tools via MCP, Skills, CLI and more.
 
 ```
   Sources                    anyclaw                       Outputs
