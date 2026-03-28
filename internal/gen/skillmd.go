@@ -192,7 +192,7 @@ func WriteManifestSkillMD(w io.Writer, m *pkg.Manifest) {
 	switch m.InferAdapter() {
 	case "openapi":
 		fmt.Fprintf(w, "When the user's request matches one of the commands below, use `anyclaw run %s <command>` to execute. Parse the response and reply in natural language.\n\n", m.Name)
-	case "opencli", "cli":
+	case "cli":
 		fmt.Fprintf(w, "When the user's request matches one of the commands below, use `anyclaw run %s <command>` to execute. Parse the response and reply in natural language.\n\n", m.Name)
 	case "script":
 		fmt.Fprintf(w, "When the user's request matches one of the commands below, use `anyclaw run %s <command>` to execute.\n\n", m.Name)

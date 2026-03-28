@@ -10,11 +10,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/fastclaw-ai/anyclaw/internal/pkg"
 )
 
-// PipelineAdapter executes opencli-compatible YAML pipelines.
+// PipelineAdapter executes YAML pipelines.
 type PipelineAdapter struct{}
 
 func (a *PipelineAdapter) Execute(ctx context.Context, cmd *pkg.Command, params map[string]any, packageDir string) (*Result, error) {
@@ -24,6 +25,24 @@ func (a *PipelineAdapter) Execute(ctx context.Context, cmd *pkg.Command, params 
 
 	// Current data flowing through the pipeline
 	var data any
+
+	// Browser-dependent pipelines: auto-start daemon, use browser extension
+	if pipelineNeedsBrowser(cmd.Pipeline) {
+		EnsureDaemon()
+
+		var connected bool
+		for i := 0; i < 10; i++ {
+			if connected, _ = BridgeStatus(); connected {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		if connected {
+			return a.executeWithBridge(ctx, cmd, params)
+		}
+		return nil, fmt.Errorf("this command requires the AnyClaw browser extension.\nInstall it:\n  1. Open chrome://extensions\n  2. Enable Developer Mode\n  3. Load unpacked → select the 'extension' directory\n  See: https://github.com/fastclaw-ai/anyclaw")
+	}
 
 	for _, step := range cmd.Pipeline {
 		var err error
@@ -40,10 +59,9 @@ func (a *PipelineAdapter) Execute(ctx context.Context, cmd *pkg.Command, params 
 			case "limit":
 				data, err = pipelineLimit(data, renderTemplate(fmt.Sprintf("%v", arg), params, nil, 0))
 			case "navigate":
-				// Skip browser navigation for now
 				continue
 			case "evaluate":
-				return nil, fmt.Errorf("evaluate step requires browser, not supported yet")
+				return nil, fmt.Errorf("this command requires the AnyClaw browser extension")
 			default:
 				return nil, fmt.Errorf("unknown pipeline step: %s", op)
 			}
@@ -364,9 +382,23 @@ func renderTemplate(tmpl string, args map[string]any, item map[string]any, index
 			if strings.Contains(expr, "?") {
 				return evalSimpleTernary(expr, args)
 			}
+			// Handle pipe filters: args.name | json → JSON-encode the value
 			key := strings.TrimPrefix(expr, "args.")
+			filter := ""
+			if pipeIdx := strings.Index(key, "|"); pipeIdx >= 0 {
+				filter = strings.TrimSpace(key[pipeIdx+1:])
+				key = strings.TrimSpace(key[:pipeIdx])
+			}
 			if v, ok := args[key]; ok {
-				return fmt.Sprintf("%v", v)
+				val := fmt.Sprintf("%v", v)
+				if filter == "json" {
+					b, _ := json.Marshal(val)
+					return string(b)
+				}
+				return val
+			}
+			if filter == "json" {
+				return `""`
 			}
 			return ""
 		}
@@ -447,6 +479,58 @@ func httpPost(ctx context.Context, url string, body map[string]any) (any, error)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	return doRequest(req)
+}
+
+// executeWithBridge runs the pipeline using the AnyClaw browser extension bridge.
+func (a *PipelineAdapter) executeWithBridge(ctx context.Context, cmd *pkg.Command, params map[string]any) (*Result, error) {
+	var data any
+
+	for _, step := range cmd.Pipeline {
+		var err error
+		for op, arg := range step {
+			switch op {
+			case "navigate":
+				url := renderTemplate(fmt.Sprintf("%v", arg), params, nil, 0)
+				err = BridgeNavigate(url)
+			case "evaluate":
+				script := renderTemplate(fmt.Sprintf("%v", arg), params, nil, 0)
+				data, err = BridgeEvaluate(script)
+			case "fetch":
+				data, err = pipelineFetch(ctx, arg, params, data)
+			case "select":
+				data, err = pipelineSelect(data, renderTemplate(fmt.Sprintf("%v", arg), params, nil, 0))
+			case "map":
+				data, err = pipelineMap(data, arg, params)
+			case "filter":
+				data, err = pipelineFilter(data, fmt.Sprintf("%v", arg), params)
+			case "limit":
+				data, err = pipelineLimit(data, renderTemplate(fmt.Sprintf("%v", arg), params, nil, 0))
+			}
+			if err != nil {
+				return nil, fmt.Errorf("pipeline step %q: %w", op, err)
+			}
+		}
+	}
+
+	out, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	var dataMap map[string]any
+	json.Unmarshal(out, &dataMap)
+	return &Result{Content: string(out), Data: dataMap}, nil
+}
+
+// pipelineNeedsBrowser checks if any step in the pipeline requires a browser.
+func pipelineNeedsBrowser(pipeline []map[string]any) bool {
+	for _, step := range pipeline {
+		for op := range step {
+			if op == "evaluate" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func doRequest(req *http.Request) (any, error) {

@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strings"
-
 	"github.com/fastclaw-ai/anyclaw/internal/adapter"
 	"github.com/fastclaw-ai/anyclaw/internal/pkg"
 	"github.com/spf13/cobra"
@@ -60,7 +61,13 @@ Examples:
 			return err
 		}
 
-		fmt.Println(result.Content)
+		// If command has columns defined, render as table
+		jsonOutput := hasFlag(args[1:], "--json")
+		if !jsonOutput && len(target.Columns) > 0 {
+			printTable(result.Content, target.Columns)
+		} else {
+			fmt.Println(result.Content)
+		}
 		return nil
 	},
 }
@@ -69,9 +76,9 @@ Examples:
 func parseRunArgs(cmd *cobra.Command, args []string, target *pkg.Command) map[string]any {
 	params := make(map[string]any)
 
-	// Fill defaults
+	// Fill defaults (skip nil/empty defaults for required args)
 	for name, arg := range target.Args {
-		if arg.Default != "" {
+		if arg.Default != "" && arg.Default != "<nil>" {
 			params[name] = arg.Default
 		}
 	}
@@ -80,6 +87,10 @@ func parseRunArgs(cmd *cobra.Command, args []string, target *pkg.Command) map[st
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		// Skip output format flags
+		if arg == "--json" {
+			continue
+		}
 		if len(arg) > 2 && arg[:2] == "--" {
 			key := arg[2:]
 			if i+1 < len(args) && (len(args[i+1]) < 2 || args[i+1][:2] != "--") {
@@ -93,13 +104,28 @@ func parseRunArgs(cmd *cobra.Command, args []string, target *pkg.Command) map[st
 		}
 	}
 
-	// For CLI wrapper commands, append positional args to the "args" param
-	if len(positional) > 0 {
-		existing, _ := params["args"].(string)
-		if existing != "" {
-			params["args"] = existing + " " + strings.Join(positional, " ")
-		} else {
-			params["args"] = strings.Join(positional, " ")
+	// Map positional args
+	if len(positional) > 0 && target != nil {
+		// First, try to map to required args that don't have values yet
+		posIdx := 0
+		for _, name := range sortedRequiredArgs(target) {
+			if posIdx >= len(positional) {
+				break
+			}
+			if _, exists := params[name]; !exists {
+				params[name] = positional[posIdx]
+				posIdx++
+			}
+		}
+		// Remaining positional args go to "args" (for CLI wrapper commands)
+		if posIdx < len(positional) {
+			remaining := positional[posIdx:]
+			existing, _ := params["args"].(string)
+			if existing != "" {
+				params["args"] = existing + " " + strings.Join(remaining, " ")
+			} else {
+				params["args"] = strings.Join(remaining, " ")
+			}
 		}
 	}
 
@@ -224,6 +250,107 @@ func printCommandHelp(pkgName string, cmd *pkg.Command) {
 			fmt.Printf("  --%s%s%s%s\n", name, req, def, desc)
 		}
 	}
+}
+
+// sortedRequiredArgs returns required arg names in a stable order.
+func sortedRequiredArgs(target *pkg.Command) []string {
+	var required []string
+	for name, arg := range target.Args {
+		if arg.Required {
+			required = append(required, name)
+		}
+	}
+	// Sort for deterministic ordering
+	sort.Strings(required)
+	return required
+}
+
+func hasFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// printTable renders JSON array data as a bordered table using the given column order.
+func printTable(content string, columns []string) {
+	var rows []map[string]any
+	if err := json.Unmarshal([]byte(content), &rows); err != nil {
+		fmt.Println(content)
+		return
+	}
+
+	if len(rows) == 0 {
+		fmt.Println("(no results)")
+		return
+	}
+
+	// If no columns specified, derive from first row
+	if len(columns) == 0 {
+		for k := range rows[0] {
+			columns = append(columns, k)
+		}
+	}
+
+	// Calculate column widths
+	widths := make([]int, len(columns))
+	for i, c := range columns {
+		// Capitalize first letter for header
+		header := strings.ToUpper(c[:1]) + c[1:]
+		widths[i] = len(header)
+	}
+	for _, row := range rows {
+		for i, c := range columns {
+			val := fmt.Sprintf("%v", row[c])
+			if len(val) > widths[i] {
+				widths[i] = len(val)
+			}
+		}
+	}
+
+	// Cap max column width
+	for i := range widths {
+		if widths[i] > 80 {
+			widths[i] = 80
+		}
+	}
+
+	// Build separator line
+	sepParts := make([]string, len(columns))
+	for i, w := range widths {
+		sepParts[i] = strings.Repeat("─", w+2)
+	}
+	sep := "├" + strings.Join(sepParts, "┼") + "┤"
+	topBorder := "┌" + strings.Join(sepParts, "┬") + "┐"
+	botBorder := "└" + strings.Join(sepParts, "┴") + "┘"
+
+	// Print header
+	fmt.Println(topBorder)
+	headerParts := make([]string, len(columns))
+	for i, c := range columns {
+		header := strings.ToUpper(c[:1]) + c[1:]
+		headerParts[i] = fmt.Sprintf(" %-*s ", widths[i], header)
+	}
+	fmt.Println("│" + strings.Join(headerParts, "│") + "│")
+	fmt.Println(sep)
+
+	// Print rows
+	for _, row := range rows {
+		valParts := make([]string, len(columns))
+		for i, c := range columns {
+			val := fmt.Sprintf("%v", row[c])
+			if len(val) > widths[i] {
+				val = val[:widths[i]-1] + "…"
+			}
+			valParts[i] = fmt.Sprintf(" %-*s ", widths[i], val)
+		}
+		fmt.Println("│" + strings.Join(valParts, "│") + "│")
+	}
+
+	fmt.Println(botBorder)
+	fmt.Fprintf(os.Stderr, "\n%d items\n", len(rows))
 }
 
 func init() {

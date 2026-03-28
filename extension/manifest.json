@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "AnyClaw",
+  "version": "0.1.0",
+  "description": "Browser bridge for anyclaw. Executes commands in Chrome via a local daemon.",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "cookies",
+    "activeTab",
+    "alarms"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "AnyClaw",
+    "default_popup": "popup.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "homepage_url": "https://github.com/fastclaw-ai/anyclaw"
+}

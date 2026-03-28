@@ -17,7 +17,7 @@ import (
 
 var placeholderRe = regexp.MustCompile(`\{\{\w+\}\}`)
 
-// CLIAdapter executes commands by shelling out to CLI tools (e.g. opencli).
+// CLIAdapter executes commands by shelling out to CLI tools.
 type CLIAdapter struct{}
 
 func (a *CLIAdapter) Execute(ctx context.Context, cmd *pkg.Command, params map[string]any, packageDir string) (*Result, error) {

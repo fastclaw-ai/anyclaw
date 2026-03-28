@@ -23,7 +23,7 @@ func New(adapterType string) (Adapter, error) {
 	switch adapterType {
 	case "openapi":
 		return &OpenAPIAdapter{}, nil
-	case "opencli", "cli":
+	case "cli":
 		return &CLIAdapter{}, nil
 	case "script":
 		return &ScriptAdapter{}, nil

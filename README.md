@@ -92,6 +92,9 @@ anyclaw run git-helper/recent --count 5
 anyclaw hackernews top --limit 5
 anyclaw gh pr list
 anyclaw docker ps
+
+# Output as JSON instead of table
+anyclaw reddit hot --limit 5 --json
 ```
 
 ### Export to MCP server
@@ -101,7 +104,7 @@ anyclaw docker ps
 anyclaw mcp
 
 # Expose a single package
-anyclaw mcp -p hackernews
+anyclaw mcp hackernews
 ```
 
 Add to your Claude Code / Cursor MCP settings:
@@ -124,7 +127,7 @@ Or expose a single package:
   "mcpServers": {
     "hackernews": {
       "command": "anyclaw",
-      "args": ["mcp", "-p", "hackernews"]
+      "args": ["mcp", "hackernews"]
     }
   }
 }
@@ -137,11 +140,47 @@ Or expose a single package:
 anyclaw skills
 
 # Generate for a specific package
-anyclaw skills -p hackernews
+anyclaw skills hackernews
 
 # Generate to a custom directory
-anyclaw skills -p hackernews -o ~/.claude/skills/hackernews
+anyclaw skills hackernews -o ~/.claude/skills/hackernews
 ```
+
+## Browser Extension
+
+Some packages require browser access (e.g., Reddit, Bilibili). anyclaw includes its own browser extension and daemon for this.
+
+### Setup
+
+1. Open `chrome://extensions` in Chrome
+2. Enable **Developer Mode**
+3. Click **Load unpacked** → select the `extension/` directory from this repo
+
+### Usage
+
+The daemon starts automatically when a browser command is needed. You can also manage it manually:
+
+```bash
+anyclaw daemon start     # start daemon (foreground)
+anyclaw daemon status    # check daemon & extension status
+anyclaw daemon stop      # stop daemon
+```
+
+### How it works
+
+```
+Chrome (real browser, with cookies & login state)
+    │
+AnyClaw extension (background.js)
+    │ WebSocket
+    ▼
+AnyClaw daemon (auto-started, port 19825)
+    │ HTTP
+    ▼
+AnyClaw CLI (anyclaw run ...)
+```
+
+The extension runs commands in an isolated Chrome window, separate from your normal browsing. Sessions auto-close after 30 seconds of inactivity.
 
 ## Package Formats
 
@@ -245,9 +284,10 @@ commands:
 | `anyclaw install <name\|url\|file>` | Install a package |
 | `anyclaw uninstall <name>` | Remove a package |
 | `anyclaw run <pkg/cmd> [args]` | Run a command |
-| `anyclaw mcp [-p pkg]` | Start MCP server (stdin/stdout) |
-| `anyclaw skills [-p pkg]` | Generate SKILL.md for Claude Code |
+| `anyclaw mcp [pkg]` | Start MCP server (stdin/stdout) |
+| `anyclaw skills [pkg]` | Generate SKILL.md for Claude Code |
 | `anyclaw auth <pkg> <api-key>` | Set API key for a package |
+| `anyclaw daemon start\|stop\|status` | Manage browser bridge daemon |
 | `anyclaw version` | Print version |
 | `anyclaw update` | Self-update to latest version |
 
@@ -269,7 +309,7 @@ anyclaw skills hackernews
 The [package registry](registry/) indexes 30+ packages from multiple sources:
 
 - **anyclaw native** — packages maintained in this repo
-- **opencli community** — compatible YAML pipeline packages from [opencli](https://github.com/jackwener/opencli)
+- **community** — compatible YAML pipeline packages from the ecosystem
 - **third-party plugins** — community-contributed packages
 
 To add a package to the registry, submit a PR adding an entry to `registry/index.yaml`.
@@ -282,7 +322,7 @@ anyclaw install https://github.com/user/repo
 
 ## Credits
 
-anyclaw's pipeline format is inspired by and compatible with [opencli](https://github.com/jackwener/opencli) by [@jackwener](https://github.com/jackwener). The anyclaw registry references several opencli community packages (Hacker News, Lobsters, Stack Overflow, V2EX, etc.) — these packages are hosted in the opencli repo and installed directly from there at runtime. Thanks to the opencli project and its contributors for building a great collection of CLI data tools.
+anyclaw's pipeline format is inspired by and compatible with [opencli](https://github.com/jackwener/opencli) by [@jackwener](https://github.com/jackwener). The anyclaw registry references several community packages from the opencli project. Thanks to opencli and its contributors for building a great collection of data tools.
 
 ## License
 

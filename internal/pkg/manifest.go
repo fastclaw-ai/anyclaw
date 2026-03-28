@@ -50,7 +50,8 @@ type Command struct {
 	Run         string                   `yaml:"run"`      // shell command template for cli/script adapter
 	HTTP        *HTTPConfig              `yaml:"http"`      // for openapi adapter
 	Script      *ScriptConfig            `yaml:"script"`    // for script adapter
-	Pipeline    []map[string]any         `yaml:"pipeline"`  // for pipeline adapter (opencli compatible)
+	Pipeline    []map[string]any         `yaml:"pipeline"`  // for pipeline adapter
+	Columns     []string                 `yaml:"columns,omitempty"` // column order for table output
 }
 
 // Arg describes a command argument.

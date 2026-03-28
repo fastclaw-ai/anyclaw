@@ -185,6 +185,7 @@ func installFromOpencliFile(path string, data []byte, customName string) error {
 				Run:         cmd.Run,
 				Script:      cmd.Script,
 				Pipeline:    cmd.Pipeline,
+				Columns:     cmd.Columns,
 			})
 		}
 
@@ -242,6 +243,7 @@ func installFromOpencliFile(path string, data []byte, customName string) error {
 			Description: single.Description,
 			Args:        convertPipelineArgs(single.Args),
 			Pipeline:    single.Pipeline,
+			Columns:     single.Columns,
 		}},
 	}
 
@@ -495,6 +497,7 @@ func installFromGitHub(repoURL string, customName string) error {
 			Description: desc,
 			Args:        cmdArgs,
 			Pipeline:    opencliCmd.Pipeline,
+			Columns:     opencliCmd.Columns,
 		}
 
 		manifest.Commands = append(manifest.Commands, command)

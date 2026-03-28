@@ -126,13 +126,18 @@ func executeResolved(store *pkg.Store, pkgName string, target *pkg.Command, args
 		return err
 	}
 
-	fmt.Println(result.Content)
+	jsonOutput := hasFlag(args, "--json")
+	if !jsonOutput && len(target.Columns) > 0 {
+		printTable(result.Content, target.Columns)
+	} else {
+		fmt.Println(result.Content)
+	}
 	return nil
 }
 
 var builtinCommands = map[string]bool{
 	"install": true, "uninstall": true, "list": true, "run": true,
-	"search": true, "mcp": true, "skills": true, "skill": true, "version": true,
+	"search": true, "mcp": true, "skills": true, "skill": true, "daemon": true, "version": true,
 	"update": true, "upgrade": true, "help": true, "completion": true,
 	"auth": true,
 }
