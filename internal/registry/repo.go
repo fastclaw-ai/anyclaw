@@ -23,7 +23,7 @@ type RepoConfig struct {
 // DefaultRepos are built-in repos (always available, no need to add).
 var DefaultRepos = []Repo{
 	{Name: "opencli", URL: "https://github.com/jackwener/opencli/tree/main/src/clis", Type: "opencli"},
-	{Name: "bb-sites", URL: "https://github.com/nicepkg/bb-sites", Type: "bb-sites"},
+	{Name: "bb-sites", URL: "https://github.com/epiral/bb-sites", Type: "bb-sites"},
 }
 
 func repoConfigPath() (string, error) {
