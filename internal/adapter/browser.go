@@ -43,6 +43,19 @@ func BridgeNavigate(url string) error {
 	return err
 }
 
+// BridgeScreenshot captures a screenshot of the current browser tab via the extension bridge.
+// Returns the base64-encoded PNG data.
+func BridgeScreenshot() (string, error) {
+	result, err := bridgeCommand("screenshot", nil)
+	if err != nil {
+		return "", err
+	}
+	if data, ok := result["data"].(string); ok {
+		return data, nil
+	}
+	return "", fmt.Errorf("screenshot: no data in response")
+}
+
 // BridgeEvaluate executes JavaScript in the browser via the extension bridge.
 func BridgeEvaluate(script string) (any, error) {
 	result, err := bridgeCommand("exec", map[string]any{

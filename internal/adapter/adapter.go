@@ -29,6 +29,8 @@ func New(adapterType string) (Adapter, error) {
 		return &ScriptAdapter{}, nil
 	case "pipeline":
 		return &PipelineAdapter{}, nil
+	case "opencli-ts":
+		return &OpenCLITSAdapter{}, nil
 	default:
 		return nil, fmt.Errorf("unknown adapter type: %s", adapterType)
 	}

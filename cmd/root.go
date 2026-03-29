@@ -139,7 +139,7 @@ var builtinCommands = map[string]bool{
 	"install": true, "uninstall": true, "list": true, "run": true,
 	"search": true, "mcp": true, "skills": true, "skill": true, "daemon": true, "version": true,
 	"update": true, "upgrade": true, "help": true, "completion": true,
-	"auth": true, "site": true,
+	"auth": true, "site": true, "browser": true,
 }
 
 func isBuiltinCommand(name string) bool {

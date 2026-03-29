@@ -468,19 +468,66 @@ func installFromGitHub(repoURL string, customName string) error {
 		return fmt.Errorf("parse repo contents: %w", err)
 	}
 
-	// Download all YAML files and parse as opencli commands
+	// Download all YAML and TS files and parse as opencli commands
 	manifest := &pkg.Manifest{
 		Name:        pkgName,
 		Version:     "1.0.0",
 		Description: "",
 		Adapter:     "pipeline",
-		Source:       "github:" + owner + "/" + repo,
+		Source:      "github:" + owner + "/" + repo,
+	}
+
+	// Separate manifest for TS commands (uses different adapter)
+	tsManifest := &pkg.Manifest{
+		Name:        pkgName,
+		Version:     "1.0.0",
+		Description: "",
+		Adapter:     "opencli-ts",
+		Source:      "github:" + owner + "/" + repo,
 	}
 
 	files := make(map[string][]byte)
 
 	for _, f := range contents {
 		ext := strings.ToLower(filepath.Ext(f.Name))
+
+		// Handle TypeScript files
+		if ext == ".ts" {
+			// Skip test files
+			if strings.HasSuffix(strings.ToLower(f.Name), ".test.ts") ||
+				strings.HasSuffix(strings.ToLower(f.Name), ".spec.ts") ||
+				strings.HasSuffix(strings.ToLower(f.Name), ".d.ts") {
+				continue
+			}
+
+			data, err := fetchURL(f.DownloadURL)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: skip %s: %v\n", f.Name, err)
+				continue
+			}
+
+			tsCmd := parseTSCommand(f.Name, string(data))
+			if tsCmd == nil {
+				continue
+			}
+
+			if tsManifest.Description == "" && tsCmd.site != "" {
+				tsManifest.Description = tsCmd.site + " data tools"
+			}
+
+			command := pkg.Command{
+				Name:        tsCmd.name,
+				Description: tsCmd.description,
+				Args:        tsCmd.args,
+				Script:      &pkg.ScriptConfig{Runtime: "opencli-ts", Code: string(data)},
+				Columns:     tsCmd.columns,
+			}
+
+			tsManifest.Commands = append(tsManifest.Commands, command)
+			files[f.Name] = data
+			continue
+		}
+
 		if ext != ".yaml" && ext != ".yml" {
 			continue
 		}
@@ -493,11 +540,11 @@ func installFromGitHub(repoURL string, customName string) error {
 
 		// Parse opencli YAML
 		var opencliCmd struct {
-			Site        string                   `yaml:"site"`
-			Name        string                   `yaml:"name"`
-			Description string                   `yaml:"description"`
-			Browser     *bool                    `yaml:"browser"`
-			Strategy    string                   `yaml:"strategy"`
+			Site        string                 `yaml:"site"`
+			Name        string                 `yaml:"name"`
+			Description string                 `yaml:"description"`
+			Browser     *bool                  `yaml:"browser"`
+			Strategy    string                 `yaml:"strategy"`
 			Args        map[string]struct {
 				Type        string `yaml:"type"`
 				Default     any    `yaml:"default"`
@@ -559,18 +606,15 @@ func installFromGitHub(repoURL string, customName string) error {
 		files[f.Name] = data
 	}
 
+	// If we have both YAML and TS commands, merge TS commands into the main manifest
+	if len(manifest.Commands) > 0 && len(tsManifest.Commands) > 0 {
+		manifest.Commands = append(manifest.Commands, tsManifest.Commands...)
+	} else if len(manifest.Commands) == 0 && len(tsManifest.Commands) > 0 {
+		// Only TS commands found — use the TS manifest
+		manifest = tsManifest
+	}
+
 	if len(manifest.Commands) == 0 {
-		// Check if there were non-YAML files (e.g. .ts) that we skipped
-		var nonYAML []string
-		for _, f := range contents {
-			ext := strings.ToLower(filepath.Ext(f.Name))
-			if ext != ".yaml" && ext != ".yml" && ext != "" {
-				nonYAML = append(nonYAML, f.Name)
-			}
-		}
-		if len(nonYAML) > 0 {
-			return fmt.Errorf("no compatible YAML commands found in %s/%s (found %s files, which are not supported)", owner, repo, filepath.Ext(nonYAML[0]))
-		}
 		return fmt.Errorf("no valid commands found in %s/%s", owner, repo)
 	}
 
@@ -797,6 +841,88 @@ func parseSubcommands(name string, helpText string) []pkg.Command {
 	}
 
 	return commands
+}
+
+// tsCommandInfo holds metadata extracted from a TypeScript opencli command.
+type tsCommandInfo struct {
+	site        string
+	name        string
+	description string
+	args        map[string]pkg.Arg
+	columns     []string
+}
+
+// parseTSCommand extracts command metadata from an opencli TypeScript file
+// by regex-matching the cli({...}) call.
+func parseTSCommand(filename string, code string) *tsCommandInfo {
+	// Match cli({ ... }) block
+	reCliCall := regexp.MustCompile(`(?s)cli\(\s*\{(.+)\}\s*\)\s*;?\s*$`)
+	m := reCliCall.FindStringSubmatch(code)
+	if len(m) == 0 {
+		return nil
+	}
+	body := m[1]
+
+	info := &tsCommandInfo{
+		args: make(map[string]pkg.Arg),
+	}
+
+	// Extract string fields
+	reName := regexp.MustCompile(`(?m)^\s*name:\s*"([^"]+)"`)
+	if sm := reName.FindStringSubmatch(body); len(sm) > 1 {
+		info.name = sm[1]
+	}
+	reSite := regexp.MustCompile(`(?m)^\s*site:\s*"([^"]+)"`)
+	if sm := reSite.FindStringSubmatch(body); len(sm) > 1 {
+		info.site = sm[1]
+	}
+	reDesc := regexp.MustCompile(`(?m)^\s*description:\s*"([^"]+)"`)
+	if sm := reDesc.FindStringSubmatch(body); len(sm) > 1 {
+		info.description = sm[1]
+	}
+
+	// Extract columns: ["col1", "col2"]
+	reCols := regexp.MustCompile(`columns:\s*\[([^\]]+)\]`)
+	if sm := reCols.FindStringSubmatch(body); len(sm) > 1 {
+		reStr := regexp.MustCompile(`"([^"]+)"`)
+		for _, cm := range reStr.FindAllStringSubmatch(sm[1], -1) {
+			info.columns = append(info.columns, cm[1])
+		}
+	}
+
+	// Extract args: [{name: "limit", type: "int", default: 30}]
+	reArgs := regexp.MustCompile(`(?s)args:\s*\[(.+?)\]`)
+	if sm := reArgs.FindStringSubmatch(body); len(sm) > 1 {
+		reArg := regexp.MustCompile(`(?s)\{([^}]+)\}`)
+		for _, am := range reArg.FindAllStringSubmatch(sm[1], -1) {
+			argBody := am[1]
+			var argName, argType, argDefault string
+			if nm := reName.FindStringSubmatch(argBody); len(nm) > 1 {
+				argName = nm[1]
+			}
+			reType := regexp.MustCompile(`(?m)type:\s*"([^"]+)"`)
+			if tm := reType.FindStringSubmatch(argBody); len(tm) > 1 {
+				argType = tm[1]
+			}
+			reDefault := regexp.MustCompile(`(?m)default:\s*(\S+)`)
+			if dm := reDefault.FindStringSubmatch(argBody); len(dm) > 1 {
+				argDefault = strings.TrimRight(dm[1], ",")
+			}
+			if argName != "" {
+				info.args[argName] = pkg.Arg{
+					Type:    argType,
+					Default: argDefault,
+				}
+			}
+		}
+	}
+
+	// Fallback name from filename
+	if info.name == "" {
+		info.name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
+	}
+
+	return info
 }
 
 func fetchURL(url string) ([]byte, error) {
