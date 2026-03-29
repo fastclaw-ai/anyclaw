@@ -7,26 +7,19 @@ import (
 	"text/tabwriter"
 
 	"github.com/fastclaw-ai/anyclaw/internal/pkg"
-	"github.com/fastclaw-ai/anyclaw/internal/registry"
 	"github.com/spf13/cobra"
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List installed packages and commands",
-	Long: `List installed packages. Use --all to show all available packages from the registry.
+	Short: "List installed packages",
+	Long: `List installed packages and their commands.
+
+To browse available packages, use: anyclaw search repo <keyword>
 
 Examples:
-  anyclaw list              # show installed packages
-  anyclaw list --all        # show all available packages from registry
-  anyclaw list --all --page 2  # page 2 of registry packages`,
+  anyclaw list`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		all, _ := cmd.Flags().GetBool("all")
-		if all {
-			page, _ := cmd.Flags().GetInt("page")
-			pageSize, _ := cmd.Flags().GetInt("size")
-			return listRemote(page, pageSize)
-		}
 		return listLocal()
 	},
 }
@@ -46,9 +39,8 @@ func listLocal() error {
 		fmt.Println("No packages installed.")
 		fmt.Println()
 		fmt.Println("Get started:")
-		fmt.Println("  anyclaw search news        # discover packages")
-		fmt.Println("  anyclaw install hackernews  # install a package")
-		fmt.Println("  anyclaw list --all          # browse all available packages")
+		fmt.Println("  anyclaw search repo news       # discover packages from repos")
+		fmt.Println("  anyclaw install opencli/hackernews  # install a package")
 		return nil
 	}
 
@@ -80,51 +72,6 @@ func listLocal() error {
 	return nil
 }
 
-func listRemote(page, pageSize int) error {
-	idx, err := registry.FetchIndex()
-	if err != nil {
-		return err
-	}
-
-	total := len(idx.Packages)
-	if total == 0 {
-		fmt.Println("Registry is empty.")
-		return nil
-	}
-
-	// Pagination
-	start := (page - 1) * pageSize
-	if start >= total {
-		fmt.Printf("No more packages. (total: %d, showing %d per page)\n", total, pageSize)
-		return nil
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
-	}
-
-	totalPages := (total + pageSize - 1) / pageSize
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tDESCRIPTION\tTYPE\n")
-	for _, p := range idx.Packages[start:end] {
-		fmt.Fprintf(w, "%s\t%s\t[%s]\n", p.Name, p.Description, p.Type)
-	}
-	w.Flush()
-
-	fmt.Fprintf(os.Stderr, "\nPage %d/%d (%d packages). ", page, totalPages, total)
-	if page < totalPages {
-		fmt.Fprintf(os.Stderr, "Next: anyclaw list --all --page %d\n", page+1)
-	} else {
-		fmt.Fprintln(os.Stderr, "")
-	}
-
-	return nil
-}
-
 func init() {
-	listCmd.Flags().BoolP("all", "a", false, "Show all available packages from registry")
-	listCmd.Flags().Int("page", 1, "Page number")
-	listCmd.Flags().Int("size", 20, "Packages per page")
 	rootCmd.AddCommand(listCmd)
 }

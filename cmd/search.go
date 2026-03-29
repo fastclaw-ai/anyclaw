@@ -54,7 +54,7 @@ func searchHub(keyword string) error {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "NAME\tDESCRIPTION\tTYPE\n")
 	for _, p := range results {
-		fmt.Fprintf(w, "%s\t%s\t[%s]\n", p.Name, p.Description, p.Type)
+		fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Description, p.Type)
 	}
 	w.Flush()
 
@@ -74,7 +74,7 @@ func searchRepos(keyword string) error {
 
 	kw := strings.ToLower(keyword)
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tREPO\tTYPE\n")
+	fmt.Fprintf(w, "NAME\tDESCRIPTION\n")
 	found := 0
 
 	for _, repo := range cfg.Repos {
@@ -83,8 +83,8 @@ func searchRepos(keyword string) error {
 			fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", repo.Name, err)
 			continue
 		}
-		for _, name := range matches {
-			fmt.Fprintf(w, "%s\t%s\t[%s]\n", name, repo.Name, repo.Type)
+		for _, m := range matches {
+			fmt.Fprintf(w, "%s/%s\t%s\n", repo.Name, m.name, m.description)
 			found++
 		}
 	}
@@ -98,7 +98,12 @@ func searchRepos(keyword string) error {
 	return nil
 }
 
-func searchSingleRepo(repo *registry.Repo, keyword string) ([]string, error) {
+type repoMatch struct {
+	name        string
+	description string
+}
+
+func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) {
 	switch repo.Type {
 	case "opencli":
 		return searchGitHubDir(repo.URL, keyword)
@@ -110,7 +115,7 @@ func searchSingleRepo(repo *registry.Repo, keyword string) ([]string, error) {
 }
 
 // searchGitHubDir lists directories from a GitHub tree URL and matches names.
-func searchGitHubDir(repoURL string, keyword string) ([]string, error) {
+func searchGitHubDir(repoURL string, keyword string) ([]repoMatch, error) {
 	repoURL = strings.TrimSuffix(repoURL, "/")
 	parts := strings.Split(repoURL, "/")
 	if len(parts) < 5 {
@@ -144,18 +149,18 @@ func searchGitHubDir(repoURL string, keyword string) ([]string, error) {
 		return nil, err
 	}
 
-	var matches []string
+	var matches []repoMatch
 	for _, c := range contents {
 		name := strings.TrimSuffix(c.Name, filepath.Ext(c.Name))
 		if strings.Contains(strings.ToLower(name), keyword) {
-			matches = append(matches, name)
+			matches = append(matches, repoMatch{name: name, description: ""})
 		}
 	}
 	return matches, nil
 }
 
 // searchRepoIndex fetches an anyclaw-type repo's index.yaml and searches it.
-func searchRepoIndex(repo *registry.Repo, keyword string) ([]string, error) {
+func searchRepoIndex(repo *registry.Repo, keyword string) ([]repoMatch, error) {
 	indexURL := strings.TrimSuffix(repo.URL, "/")
 	if !strings.HasSuffix(indexURL, ".yaml") && !strings.HasSuffix(indexURL, ".yml") {
 		indexURL += "/index.yaml"
@@ -177,11 +182,11 @@ func searchRepoIndex(repo *registry.Repo, keyword string) ([]string, error) {
 	}
 
 	results := idx.Search(keyword)
-	var names []string
+	var matches []repoMatch
 	for _, p := range results {
-		names = append(names, p.Name)
+		matches = append(matches, repoMatch{name: p.Name, description: p.Description})
 	}
-	return names, nil
+	return matches, nil
 }
 
 func init() {
