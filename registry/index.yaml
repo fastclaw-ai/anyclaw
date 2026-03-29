@@ -14,6 +14,6 @@ packages:
 
   - name: query-domains
     description: "Domain name availability checker - search domains by keyword"
-    type: openapi
+    type: anyclaw
     source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/query-domains/query-domains.yaml
     tags: [domain, whois, dns]

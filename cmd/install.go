@@ -662,8 +662,8 @@ func installFromRegistry(name string, customName string) error {
 
 	source := entry.Source
 
-	// For manifest type, download and install directly as manifest
-	if entry.Type == "manifest" {
+	// For manifest/anyclaw type, download and install directly as anyclaw manifest
+	if entry.Type == "manifest" || entry.Type == "anyclaw" {
 		return installManifestFromURL(source, customName)
 	}
 
@@ -1095,7 +1095,7 @@ func installFromRepoIndex(repo *registry.Repo, pkgName string, customName string
 	fmt.Fprintf(os.Stderr, "Found: %s - %s\n", entry.Name, entry.Description)
 
 	source := entry.Source
-	if entry.Type == "manifest" {
+	if entry.Type == "manifest" || entry.Type == "anyclaw" {
 		return installManifestFromURL(source, customName)
 	}
 	if strings.Contains(source, "github.com/") {
