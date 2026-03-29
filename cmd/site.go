@@ -34,6 +34,11 @@ Examples:
 			return cmd.Help()
 		}
 
+		// Handle help flags explicitly (DisableFlagParsing prevents cobra from handling them)
+		if args[0] == "--help" || args[0] == "-h" {
+			return cmd.Help()
+		}
+
 		// Route subcommands
 		switch args[0] {
 		case "update":
