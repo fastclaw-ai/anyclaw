@@ -487,7 +487,7 @@ func installFromGitHub(repoURL string, customName string) error {
 		Version:     "1.0.0",
 		Description: "",
 		Adapter:     "pipeline",
-		Source:      "github:" + owner + "/" + repo,
+		Source:      "github-url:" + repoURL,
 	}
 
 	// Separate manifest for TS commands (uses different adapter)
@@ -496,7 +496,7 @@ func installFromGitHub(repoURL string, customName string) error {
 		Version:     "1.0.0",
 		Description: "",
 		Adapter:     "opencli-ts",
-		Source:      "github:" + owner + "/" + repo,
+		Source:      "github-url:" + repoURL,
 	}
 
 	files := make(map[string][]byte)

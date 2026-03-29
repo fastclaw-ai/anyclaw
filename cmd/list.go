@@ -57,8 +57,21 @@ func listLocal() error {
 	for _, m := range manifests {
 		source := m.Source
 		// Simplify source display
-		if idx := strings.Index(source, ":"); idx >= 0 {
-			source = source[:idx]
+		switch {
+		case strings.HasPrefix(source, "github-url:"), strings.HasPrefix(source, "github:"):
+			source = "github"
+		case strings.HasPrefix(source, "bb-sites:"):
+			source = "bb-sites"
+		case strings.HasPrefix(source, "url:"):
+			source = "url"
+		case strings.HasPrefix(source, "cli:"):
+			source = "cli"
+		case strings.HasPrefix(source, "local:"):
+			source = "local"
+		default:
+			if idx := strings.Index(source, ":"); idx >= 0 {
+				source = source[:idx]
+			}
 		}
 		fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", m.Name, len(m.Commands), m.InferAdapter(), source)
 	}
