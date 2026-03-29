@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/fastclaw-ai/anyclaw/internal/registry"
+	"github.com/fastclaw-ai/anyclaw/internal/site"
 	"github.com/spf13/cobra"
 )
 
@@ -111,8 +116,70 @@ var repoRemoveCmd = &cobra.Command{
 	},
 }
 
+var repoUpdateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update/refresh all configured repositories",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := registry.LoadRepoConfig()
+		if err != nil {
+			return err
+		}
+		if len(cfg.Repos) == 0 {
+			fmt.Println("No repositories configured.")
+			return nil
+		}
+
+		fmt.Println("Updating repos...")
+		updated := 0
+		for _, repo := range cfg.Repos {
+			switch repo.Type {
+			case "bb-sites":
+				home, _ := os.UserHomeDir()
+				bbDir := filepath.Join(home, ".anyclaw", "bb-sites")
+				if err := site.UpdateFromGitHub(context.Background(), bbDir); err != nil {
+					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "✓ %s updated\n", repo.Name)
+				updated++
+			case "opencli":
+				// Nothing to cache locally — just verify connectivity
+				resp, err := http.Head(repo.URL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
+					continue
+				}
+				resp.Body.Close()
+				fmt.Fprintf(os.Stderr, "✓ %s ok\n", repo.Name)
+				updated++
+			default:
+				// Anyclaw-type repo: fetch and cache index.yaml
+				indexURL := strings.TrimSuffix(repo.URL, "/")
+				if !strings.HasSuffix(indexURL, ".yaml") && !strings.HasSuffix(indexURL, ".yml") {
+					indexURL += "/index.yaml"
+				}
+				resp, err := http.Get(indexURL)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
+					continue
+				}
+				resp.Body.Close()
+				if resp.StatusCode >= 400 {
+					fmt.Fprintf(os.Stderr, "✗ %s: HTTP %d\n", repo.Name, resp.StatusCode)
+					continue
+				}
+				fmt.Fprintf(os.Stderr, "✓ %s updated\n", repo.Name)
+				updated++
+			}
+		}
+
+		fmt.Fprintf(os.Stderr, "%d repos updated\n", updated)
+		return nil
+	},
+}
+
 func init() {
 	repoAddCmd.Flags().String("type", "", "repo type: anyclaw, opencli, bb-sites")
-	repoCmd.AddCommand(repoListCmd, repoAddCmd, repoRemoveCmd)
+	repoCmd.AddCommand(repoListCmd, repoAddCmd, repoRemoveCmd, repoUpdateCmd)
 	rootCmd.AddCommand(repoCmd)
 }

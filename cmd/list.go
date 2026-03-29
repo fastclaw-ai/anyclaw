@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/fastclaw-ai/anyclaw/internal/pkg"
@@ -51,16 +52,17 @@ func listLocal() error {
 		return nil
 	}
 
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "NAME\tCOMMANDS\tADAPTER\tSOURCE\n")
 	for _, m := range manifests {
-		fmt.Printf("  %s\n", m.Name)
-		for _, c := range m.Commands {
-			desc := ""
-			if c.Description != "" {
-				desc = "  " + c.Description
-			}
-			fmt.Printf("    %s%s\n", c.Name, desc)
+		source := m.Source
+		// Simplify source display
+		if idx := strings.Index(source, ":"); idx >= 0 {
+			source = source[:idx]
 		}
+		fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", m.Name, len(m.Commands), m.InferAdapter(), source)
 	}
+	w.Flush()
 
 	return nil
 }

@@ -26,15 +26,8 @@ var updateCmd = &cobra.Command{
 	RunE:  runUpdate,
 }
 
-var upgradeCmd = &cobra.Command{
-	Use:   "upgrade",
-	Short: "Update anyclaw to the latest version (alias for update)",
-	RunE:  runUpdate,
-}
-
 func init() {
 	rootCmd.AddCommand(updateCmd)
-	rootCmd.AddCommand(upgradeCmd)
 }
 
 type ghRelease struct {
