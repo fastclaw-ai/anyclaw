@@ -55,8 +55,11 @@ Examples:
 		}
 
 		// Registry lookup
-		if err := installFromRegistry(name, customName); err == nil {
+		if regErr := installFromRegistry(name, customName); regErr == nil {
 			return nil
+		} else if regErr.Error() != "not found in registry" {
+			// Registry found it but install failed — return the real error
+			return regErr
 		}
 
 		// System CLI tool (fallback)
@@ -557,6 +560,17 @@ func installFromGitHub(repoURL string, customName string) error {
 	}
 
 	if len(manifest.Commands) == 0 {
+		// Check if there were non-YAML files (e.g. .ts) that we skipped
+		var nonYAML []string
+		for _, f := range contents {
+			ext := strings.ToLower(filepath.Ext(f.Name))
+			if ext != ".yaml" && ext != ".yml" && ext != "" {
+				nonYAML = append(nonYAML, f.Name)
+			}
+		}
+		if len(nonYAML) > 0 {
+			return fmt.Errorf("no compatible YAML commands found in %s/%s (found %s files, which are not supported)", owner, repo, filepath.Ext(nonYAML[0]))
+		}
 		return fmt.Errorf("no valid commands found in %s/%s", owner, repo)
 	}
 
