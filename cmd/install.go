@@ -44,6 +44,11 @@ Examples:
 			return installFromURL(name, customName)
 		}
 
+		// Local directory
+		if isLocalDir(name) {
+			return installFromDir(name, customName)
+		}
+
 		// Local file
 		if isLocalFile(name) {
 			return installFromFile(name, customName)
@@ -63,6 +68,11 @@ Examples:
 	},
 }
 
+func isLocalDir(name string) bool {
+	info, err := os.Stat(name)
+	return err == nil && info.IsDir()
+}
+
 func isLocalFile(name string) bool {
 	ext := strings.ToLower(filepath.Ext(name))
 	if ext == ".yaml" || ext == ".yml" || ext == ".json" {
@@ -70,6 +80,46 @@ func isLocalFile(name string) bool {
 		return err == nil
 	}
 	return false
+}
+
+func installFromDir(dir string, customName string) error {
+	// Find YAML files in the directory
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("read directory: %w", err)
+	}
+
+	var yamlFiles []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if ext == ".yaml" || ext == ".yml" || ext == ".json" {
+			yamlFiles = append(yamlFiles, filepath.Join(dir, e.Name()))
+		}
+	}
+
+	if len(yamlFiles) == 0 {
+		return fmt.Errorf("no YAML/JSON files found in directory %q", dir)
+	}
+
+	// If there's exactly one file, install it directly
+	if len(yamlFiles) == 1 {
+		return installFromFile(yamlFiles[0], customName)
+	}
+
+	// Multiple files: try to find the main one by matching directory name
+	dirName := filepath.Base(dir)
+	for _, f := range yamlFiles {
+		baseName := strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
+		if baseName == dirName {
+			return installFromFile(f, customName)
+		}
+	}
+
+	// Fallback: install the first YAML file found
+	return installFromFile(yamlFiles[0], customName)
 }
 
 func installFromURL(url string, customName string) error {
@@ -144,6 +194,7 @@ type pipelineArg struct {
 	Default     any    `yaml:"default"`
 	Description string `yaml:"description"`
 	Required    bool   `yaml:"required"`
+	Short       string `yaml:"short"`
 }
 
 func installFromOpencliFile(path string, data []byte, customName string) error {
@@ -258,6 +309,7 @@ func convertPipelineArgs(args map[string]pipelineArg) map[string]pkg.Arg {
 			Required:    arg.Required,
 			Default:     fmt.Sprintf("%v", arg.Default),
 			Description: arg.Description,
+			Short:       arg.Short,
 		}
 	}
 	return result

@@ -60,6 +60,7 @@ type Arg struct {
 	Required    bool   `yaml:"required"`
 	Default     string `yaml:"default"`
 	Description string `yaml:"description"`
+	Short       string `yaml:"short"`       // single-char short flag (e.g. "a" for -a)
 }
 
 // HTTPConfig describes how to call an HTTP API for a command.

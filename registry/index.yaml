@@ -6,6 +6,12 @@ packages:
     source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/translator/openapi.yaml
     tags: [translation, nlp, language]
 
+  - name: query-domains
+    description: "Domain name availability checker - search domains by keyword"
+    type: openapi
+    source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/query-domains/query-domains.yaml
+    tags: [domain, whois, dns]
+
   # === opencli community (source in opencli repo, YAML only) ===
   - name: hackernews
     description: "Hacker News - top stories, search, jobs, and more"

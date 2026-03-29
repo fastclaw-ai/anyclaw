@@ -83,7 +83,17 @@ func parseRunArgs(cmd *cobra.Command, args []string, target *pkg.Command) map[st
 		}
 	}
 
-	// Parse --key value pairs and collect positional args
+	// Build short flag lookup: "-a" -> arg name
+	shortToName := make(map[string]string)
+	if target != nil {
+		for name, arg := range target.Args {
+			if arg.Short != "" {
+				shortToName[arg.Short] = name
+			}
+		}
+	}
+
+	// Parse --key value / -x value pairs and collect positional args
 	var positional []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
@@ -98,6 +108,23 @@ func parseRunArgs(cmd *cobra.Command, args []string, target *pkg.Command) map[st
 				i++
 			} else {
 				params[key] = "true"
+			}
+		} else if len(arg) == 2 && arg[0] == '-' && arg[1] != '-' {
+			shortKey := string(arg[1])
+			name, ok := shortToName[shortKey]
+			if !ok {
+				positional = append(positional, arg)
+				continue
+			}
+			// Check if this is a bool arg (no value needed)
+			argDef := target.Args[name]
+			if argDef.Type == "bool" {
+				params[name] = "true"
+			} else if i+1 < len(args) && (len(args[i+1]) < 1 || args[i+1][0] != '-') {
+				params[name] = args[i+1]
+				i++
+			} else {
+				params[name] = "true"
 			}
 		} else {
 			positional = append(positional, arg)
@@ -235,6 +262,10 @@ func printCommandHelp(pkgName string, cmd *pkg.Command) {
 	if len(cmd.Args) > 0 {
 		fmt.Println("\nFlags:")
 		for name, arg := range cmd.Args {
+			short := ""
+			if arg.Short != "" {
+				short = fmt.Sprintf("-%s, ", arg.Short)
+			}
 			req := ""
 			if arg.Required {
 				req = " (required)"
@@ -247,7 +278,7 @@ func printCommandHelp(pkgName string, cmd *pkg.Command) {
 			if arg.Description != "" {
 				desc = "  " + arg.Description
 			}
-			fmt.Printf("  --%s%s%s%s\n", name, req, def, desc)
+			fmt.Printf("  %s--%s%s%s%s\n", short, name, req, def, desc)
 		}
 	}
 }

@@ -55,11 +55,10 @@ anyclaw install translator
 # Install from GitHub URL
 anyclaw install https://github.com/Astro-Han/opencli-plugin-juejin
 
-# Install from local YAML file
+# Install from local file or directory
 anyclaw install examples/openapi.yaml
 anyclaw install examples/web.yaml
-anyclaw install examples/cli.yaml
-anyclaw install examples/script.yaml
+anyclaw install registry/packages/query-domains
 
 # Wrap a system CLI tool
 anyclaw install docker
@@ -85,8 +84,8 @@ anyclaw auth translator <your-api-key>
 # Run with explicit package/command
 anyclaw run hackernews/top --limit 5
 anyclaw run translator/translate --q hello --langpair "en|zh"
-anyclaw run ip-tools/myip
-anyclaw run git-helper/recent --count 5
+anyclaw run query-domains/search --keyword anyclaw -a
+anyclaw run query-domains/whois --domain anyclaw.com
 
 # Shorthand (package name as subcommand)
 anyclaw hackernews top --limit 5
@@ -281,7 +280,7 @@ commands:
 | `anyclaw list --all` | Browse all available packages from registry |
 | `anyclaw list --all --page N` | Paginate registry packages |
 | `anyclaw search <keyword>` | Search packages by name, description, or tag |
-| `anyclaw install <name\|url\|file>` | Install a package |
+| `anyclaw install <name\|url\|file\|dir>` | Install a package |
 | `anyclaw uninstall <name>` | Remove a package |
 | `anyclaw run <pkg/cmd> [args]` | Run a command |
 | `anyclaw mcp [pkg]` | Start MCP server (stdin/stdout) |

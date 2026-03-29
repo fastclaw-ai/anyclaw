@@ -1,0 +1,420 @@
+# anyclaw format - domain query tools
+# Check domain availability and WHOIS info using WHOIS protocol + RDAP
+anyclaw: "1.0"
+name: query-domains
+description: Domain name availability checker - search domains by keyword
+
+commands:
+  - name: search
+    description: Search domain availability for a keyword across multiple TLDs
+    args:
+      keyword:
+        type: string
+        required: true
+        description: Keyword to search (e.g. "anyclaw")
+      tlds:
+        type: string
+        default: "com,net,org,io,ai,co,me,dev,app,xyz,cc,tv,us,cn,uk,de,fr,jp,au,ca,ru,in,nl,eu,it,top,site,online,store,tech,cloud,blog,shop,club,live,space,fun,vip,work,ltd,run,ink,pub,wiki,design,studio,world,link,life,icu,group,plus,cool,zone,today,global,digital,network,solutions,media,services,agency"
+        description: "Comma-separated TLDs to check (e.g. com,net,org)"
+      available:
+        type: bool
+        short: "a"
+        description: "Only show available domains"
+      registered:
+        type: bool
+        short: "r"
+        description: "Only show registered domains"
+    script:
+      runtime: python3
+      code: |
+        import json
+        import sys
+        import socket
+        import urllib.request
+        import urllib.error
+        import concurrent.futures
+
+        args = json.load(sys.stdin)
+        keyword = args.get("keyword", "")
+        tlds = args.get("tlds", "com,net,org,io,ai,co,me,dev,app,xyz")
+        show_available = str(args.get("available", "")).lower() == "true"
+        show_registered = str(args.get("registered", "")).lower() == "true"
+
+        if not keyword:
+            print(json.dumps({"error": "keyword is required"}))
+            sys.exit(1)
+
+        tld_list = [t.strip() for t in tlds.split(",")]
+
+        # Check if keyword already contains a TLD (e.g. "anyclaw.app")
+        has_tld = "." in keyword and keyword.split(".")[-1].isalpha()
+
+        WHOIS_SERVERS = {
+            # Classic gTLDs
+            "com": "whois.verisign-grs.com",
+            "net": "whois.verisign-grs.com",
+            "org": "whois.pir.org",
+            "biz": "whois.nic.biz",
+            "info": "whois.nic.info",
+            "name": "whois.nic.name",
+            "pro": "whois.nic.pro",
+            "mobi": "whois.nic.mobi",
+            # New gTLDs
+            "app": "whois.nic.app",
+            "dev": "whois.nic.dev",
+            "xyz": "whois.nic.xyz",
+            "top": "whois.nic.top",
+            "site": "whois.nic.site",
+            "online": "whois.nic.online",
+            "store": "whois.nic.store",
+            "tech": "whois.nic.tech",
+            "cloud": "whois.nic.cloud",
+            "blog": "whois.nic.blog",
+            "shop": "whois.nic.shop",
+            "club": "whois.nic.club",
+            "live": "whois.nic.live",
+            "space": "whois.nic.space",
+            "fun": "whois.nic.fun",
+            "vip": "whois.nic.vip",
+            "work": "whois.nic.work",
+            "ltd": "whois.nic.ltd",
+            "group": "whois.nic.group",
+            "world": "whois.nic.world",
+            "link": "whois.nic.link",
+            "life": "whois.nic.life",
+            "icu": "whois.nic.icu",
+            "design": "whois.nic.design",
+            "studio": "whois.nic.studio",
+            "global": "whois.nic.global",
+            "digital": "whois.nic.digital",
+            "network": "whois.nic.network",
+            "solutions": "whois.nic.solutions",
+            "media": "whois.nic.media",
+            "services": "whois.nic.services",
+            "agency": "whois.nic.agency",
+            "run": "whois.nic.run",
+            "ink": "whois.nic.ink",
+            "pub": "whois.nic.pub",
+            "wiki": "whois.nic.wiki",
+            "plus": "whois.nic.plus",
+            "cool": "whois.nic.cool",
+            "zone": "whois.nic.zone",
+            "today": "whois.nic.today",
+            # ccTLDs
+            "io": "whois.nic.io",
+            "ai": "whois.nic.ai",
+            "co": "whois.nic.co",
+            "me": "whois.nic.me",
+            "cc": "ccwhois.verisign-grs.com",
+            "tv": "whois.nic.tv",
+            "us": "whois.nic.us",
+            "cn": "whois.cnnic.cn",
+            "uk": "whois.nic.uk",
+            "de": "whois.denic.de",
+            "fr": "whois.nic.fr",
+            "jp": "whois.jprs.jp",
+            "kr": "whois.kr",
+            "au": "whois.auda.org.au",
+            "ca": "whois.cira.ca",
+            "ru": "whois.tcinet.ru",
+            "in": "whois.registry.in",
+            "nl": "whois.domain-registry.nl",
+            "eu": "whois.eu",
+            "it": "whois.nic.it",
+            "se": "whois.iis.se",
+            "ch": "whois.nic.ch",
+            "be": "whois.dns.be",
+            "pl": "whois.dns.pl",
+            "nz": "whois.irs.net.nz",
+            "sg": "whois.sgnic.sg",
+            "hk": "whois.hkirc.hk",
+            "tw": "whois.twnic.net.tw",
+        }
+
+        def whois_query(domain, server, timeout=5):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect((server, 43))
+                sock.send((domain + "\r\n").encode())
+                response = b""
+                while True:
+                    data = sock.recv(4096)
+                    if not data:
+                        break
+                    response += data
+                sock.close()
+                return response.decode("utf-8", errors="ignore")
+            except Exception:
+                return None
+
+        def check_domain(domain):
+            tld = domain.split(".")[-1].lower()
+            server = WHOIS_SERVERS.get(tld)
+
+            entry = {"domain": domain, "status": "unknown"}
+
+            if server:
+                raw = whois_query(domain, server)
+                if raw:
+                    raw_lower = raw.lower()
+                    if any(phrase in raw_lower for phrase in [
+                        "no match", "not found", "no data found",
+                        "no entries found", "is available",
+                        "domain not found", "status: free",
+                        "no object found", "object does not exist",
+                    ]):
+                        entry["status"] = "available"
+                    else:
+                        entry["status"] = "registered"
+                        for line in raw.splitlines():
+                            line_s = line.strip()
+                            ll = line_s.lower()
+                            if any(k in ll for k in ["creation date:", "registration time:", "created:"]):
+                                entry["registered"] = line_s.split(":", 1)[-1].strip()
+                            elif "registry expiry date:" in ll or "expiration date:" in ll or "expire date:" in ll or "paid-till:" in ll:
+                                val = line_s.split(":", 1)[-1].strip()
+                                if len(val) >= 10 and val[0].isdigit():
+                                    entry["expires"] = val
+                            elif "registrar:" in ll and "registrar" not in entry:
+                                entry["registrar"] = line_s.split(":", 1)[-1].strip()
+                    return entry
+
+            # Fallback: try RDAP
+            try:
+                url = f"https://rdap.org/domain/{domain}"
+                req = urllib.request.Request(url)
+                req.add_header("Accept", "application/rdap+json")
+                resp = urllib.request.urlopen(req, timeout=8)
+                data = json.loads(resp.read().decode("utf-8"))
+                entry["status"] = "registered"
+                for event in data.get("events", []):
+                    if event.get("eventAction") == "registration":
+                        entry["registered"] = event.get("eventDate", "")
+                    elif event.get("eventAction") == "expiration":
+                        entry["expires"] = event.get("eventDate", "")
+                if data.get("entities"):
+                    for ent in data["entities"]:
+                        if "registrar" in ent.get("roles", []):
+                            vcard = ent.get("vcardArray", [None, []])[1]
+                            for field in vcard:
+                                if field[0] == "fn":
+                                    entry["registrar"] = field[3]
+                return entry
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    entry["status"] = "available"
+                return entry
+            except Exception:
+                return entry
+
+        results = []
+        if has_tld:
+            domains = [keyword]
+        else:
+            domains = [f"{keyword}.{tld}" for tld in tld_list]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=30) as executor:
+            futures = {executor.submit(check_domain, d): d for d in domains}
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+
+        if not has_tld:
+            tld_order = {f"{keyword}.{tld}": i for i, tld in enumerate(tld_list)}
+            results.sort(key=lambda r: tld_order.get(r["domain"], 999))
+
+        if show_available:
+            results = [r for r in results if r.get("status") == "available"]
+        elif show_registered:
+            results = [r for r in results if r.get("status") == "registered"]
+
+        print(json.dumps(results, indent=2, ensure_ascii=False))
+
+  - name: whois
+    description: Get WHOIS information for a specific domain
+    args:
+      domain:
+        type: string
+        required: true
+        description: "Full domain name (e.g. anyclaw.com)"
+    script:
+      runtime: python3
+      code: |
+        import json
+        import sys
+        import socket
+        import urllib.request
+        import urllib.error
+
+        args = json.load(sys.stdin)
+        domain = args.get("domain", "")
+
+        if not domain:
+            print(json.dumps({"error": "domain is required"}))
+            sys.exit(1)
+
+        WHOIS_SERVERS = {
+            "com": "whois.verisign-grs.com",
+            "net": "whois.verisign-grs.com",
+            "org": "whois.pir.org",
+            "biz": "whois.nic.biz",
+            "info": "whois.nic.info",
+            "app": "whois.nic.app",
+            "dev": "whois.nic.dev",
+            "xyz": "whois.nic.xyz",
+            "top": "whois.nic.top",
+            "site": "whois.nic.site",
+            "online": "whois.nic.online",
+            "store": "whois.nic.store",
+            "tech": "whois.nic.tech",
+            "cloud": "whois.nic.cloud",
+            "blog": "whois.nic.blog",
+            "shop": "whois.nic.shop",
+            "club": "whois.nic.club",
+            "live": "whois.nic.live",
+            "space": "whois.nic.space",
+            "fun": "whois.nic.fun",
+            "vip": "whois.nic.vip",
+            "work": "whois.nic.work",
+            "ltd": "whois.nic.ltd",
+            "run": "whois.nic.run",
+            "ink": "whois.nic.ink",
+            "pub": "whois.nic.pub",
+            "wiki": "whois.nic.wiki",
+            "design": "whois.nic.design",
+            "io": "whois.nic.io",
+            "ai": "whois.nic.ai",
+            "co": "whois.nic.co",
+            "me": "whois.nic.me",
+            "cc": "ccwhois.verisign-grs.com",
+            "tv": "whois.nic.tv",
+            "us": "whois.nic.us",
+            "cn": "whois.cnnic.cn",
+            "uk": "whois.nic.uk",
+            "de": "whois.denic.de",
+            "fr": "whois.nic.fr",
+            "jp": "whois.jprs.jp",
+            "kr": "whois.kr",
+            "au": "whois.auda.org.au",
+            "ca": "whois.cira.ca",
+            "ru": "whois.tcinet.ru",
+            "in": "whois.registry.in",
+            "nl": "whois.domain-registry.nl",
+            "eu": "whois.eu",
+            "it": "whois.nic.it",
+            "se": "whois.iis.se",
+            "ch": "whois.nic.ch",
+            "be": "whois.dns.be",
+            "pl": "whois.dns.pl",
+            "nz": "whois.irs.net.nz",
+            "sg": "whois.sgnic.sg",
+            "hk": "whois.hkirc.hk",
+            "tw": "whois.twnic.net.tw",
+        }
+
+        tld = domain.split(".")[-1].lower()
+        server = WHOIS_SERVERS.get(tld)
+        result = {"domain": domain}
+
+        def whois_query(domain, server, timeout=10):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((server, 43))
+            sock.send((domain + "\r\n").encode())
+            response = b""
+            while True:
+                data = sock.recv(4096)
+                if not data:
+                    break
+                response += data
+            sock.close()
+            return response.decode("utf-8", errors="ignore")
+
+        if server:
+            try:
+                raw = whois_query(domain, server)
+                raw_lower = raw.lower()
+                if any(phrase in raw_lower for phrase in [
+                    "no match", "not found", "no data found",
+                    "no entries found", "domain not found", "status: free",
+                    "no object found", "object does not exist",
+                ]):
+                    result["status"] = "available"
+                    print(json.dumps(result, indent=2, ensure_ascii=False))
+                    sys.exit(0)
+
+                result["status"] = "registered"
+                nameservers = []
+                for line in raw.splitlines():
+                    line_s = line.strip()
+                    ll = line_s.lower()
+                    if any(k in ll for k in ["creation date:", "registration time:", "created:"]):
+                        result["registered"] = line_s.split(":", 1)[-1].strip()
+                    elif "registry expiry date:" in ll or "expiration date:" in ll or "expire date:" in ll or "paid-till:" in ll:
+                        val = line_s.split(":", 1)[-1].strip()
+                        if len(val) >= 10 and val[0].isdigit():
+                            result["expires"] = val
+                    elif any(k in ll for k in ["updated date:", "last updated:"]):
+                        result["updated"] = line_s.split(":", 1)[-1].strip()
+                    elif "registrar:" in ll and "registrar" not in result:
+                        result["registrar"] = line_s.split(":", 1)[-1].strip()
+                    elif "domain status:" in ll:
+                        result.setdefault("domain_status", []).append(line_s.split(":", 1)[-1].strip())
+                    elif "name server:" in ll or "nserver:" in ll:
+                        nameservers.append(line_s.split(":", 1)[-1].strip())
+                if nameservers:
+                    result["nameservers"] = nameservers
+
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+                sys.exit(0)
+            except Exception as e:
+                pass  # Fall through to RDAP
+
+        # Fallback: RDAP
+        try:
+            url = f"https://rdap.org/domain/{domain}"
+            req = urllib.request.Request(url)
+            req.add_header("Accept", "application/rdap+json")
+            resp = urllib.request.urlopen(req, timeout=10)
+            data = json.loads(resp.read().decode("utf-8"))
+
+            result["status"] = "registered"
+            for event in data.get("events", []):
+                action = event.get("eventAction")
+                date = event.get("eventDate", "")
+                if action == "registration":
+                    result["registered"] = date
+                elif action == "expiration":
+                    result["expires"] = date
+                elif action == "last changed":
+                    result["updated"] = date
+
+            nameservers = []
+            for ns in data.get("nameservers", []):
+                nameservers.append(ns.get("ldhName", ""))
+            if nameservers:
+                result["nameservers"] = nameservers
+
+            if data.get("entities"):
+                for ent in data["entities"]:
+                    if "registrar" in ent.get("roles", []):
+                        vcard = ent.get("vcardArray", [None, []])[1]
+                        for field in vcard:
+                            if field[0] == "fn":
+                                result["registrar"] = field[3]
+
+            statuses = [s for s in data.get("status", [])]
+            if statuses:
+                result["domain_status"] = statuses
+
+            print(json.dumps(result, indent=2, ensure_ascii=False))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                result["status"] = "available"
+                print(json.dumps(result, indent=2, ensure_ascii=False))
+            else:
+                print(json.dumps({"error": f"HTTP {e.code}"}))
+                sys.exit(1)
+        except Exception as e:
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
