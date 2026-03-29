@@ -55,18 +55,22 @@ anyclaw list
 ### 4. Run commands
 
 ```bash
-# Explicit format
-anyclaw run <package>/<command> [--arg value ...]
+# Space-separated format (primary)
+anyclaw run <package> <command> [--arg value ...]
 
 # Examples
-anyclaw run hackernews/top --limit 5
-anyclaw run hackernews/search --query "AI" --limit 10
-anyclaw run translator/translate --q "hello world" --langpair "en|zh"
+anyclaw run hackernews top --limit 5
+anyclaw run hackernews search --query "AI" --limit 10
+anyclaw run translator translate --q "hello world" --langpair "en|zh"
 
 # Shorthand format
 anyclaw hackernews top --limit 5
 anyclaw gh pr list
 anyclaw docker ps
+
+# Show available commands for a package
+anyclaw run hackernews
+anyclaw hackernews --help
 ```
 
 ### 5. Manage packages
@@ -110,5 +114,5 @@ Commands return JSON output. Parse the JSON and present results in a human-reada
 
 - Always check if a package is installed (`anyclaw list`) before running commands
 - If a package is not installed, install it first with `anyclaw install <name>`
-- Use `--help` on any command for detailed usage: `anyclaw run hackernews/top --help`
+- Use `--help` on any command for detailed usage: `anyclaw run hackernews top --help`
 - If a command fails with auth errors, set the API key: `anyclaw auth <package> <key>`

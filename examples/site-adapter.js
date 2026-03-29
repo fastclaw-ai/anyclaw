@@ -7,7 +7,7 @@
     "limit": {"required": false, "description": "Number of stories to return", "default": "10"}
   },
   "readOnly": true,
-  "example": "anyclaw site hackernews/top --limit 5"
+  "example": "anyclaw site hackernews top --limit 5"
 }
 */
 async function(args) {

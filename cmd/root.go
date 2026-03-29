@@ -28,7 +28,7 @@ var rootCmd = &cobra.Command{
 	Short: "The universal tool adapter for AI agents",
 	Long:  "anyclaw — The universal tool adapter for AI agents. Turn any API, website, or application into agent-ready tools via MCP, Skills, CLI and more.",
 	// Handle unknown commands as package commands:
-	// anyclaw juejin hot → anyclaw run juejin/hot
+	// anyclaw juejin hot → anyclaw run juejin hot
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -79,6 +79,22 @@ func tryRunPackageCommand(args []string) error {
 			return err
 		}
 		return executeResolved(store, pkgName, target, remaining)
+	}
+
+	// Check if this is a help request or no-command for a package
+	if m, mErr := store.Get(input); mErr == nil {
+		// "anyclaw hackernews" or "anyclaw hackernews --help"
+		if len(remaining) == 0 || remaining[0] == "--help" || remaining[0] == "-h" {
+			if len(m.Commands) > 1 {
+				printPackageHelp(m)
+				return nil
+			}
+			if len(remaining) > 0 && (remaining[0] == "--help" || remaining[0] == "-h") {
+				// Single-command package with --help
+				printCommandHelp(m.Name, &m.Commands[0])
+				return nil
+			}
+		}
 	}
 
 	// Try as package name + second arg as command

@@ -81,16 +81,20 @@ anyclaw auth translator <your-api-key>
 ### Run commands
 
 ```bash
-# Run with explicit package/command
-anyclaw run hackernews/top --limit 5
-anyclaw run translator/translate --q hello --langpair "en|zh"
-anyclaw run query-domains/search --keyword anyclaw -a
-anyclaw run query-domains/whois --domain anyclaw.com
+# Run with package and command (space-separated)
+anyclaw run hackernews top --limit 5
+anyclaw run translator translate --q hello --langpair "en|zh"
+anyclaw run query-domains search --keyword anyclaw -a
+anyclaw run query-domains whois --domain anyclaw.com
 
 # Shorthand (package name as subcommand)
 anyclaw hackernews top --limit 5
 anyclaw gh pr list
 anyclaw docker ps
+
+# Show available commands for a package
+anyclaw run hackernews
+anyclaw hackernews --help
 
 # Output as JSON instead of table
 anyclaw reddit hot --limit 5 --json
@@ -176,7 +180,7 @@ AnyClaw extension (background.js)
 AnyClaw daemon (auto-started, port 19825)
     │ HTTP
     ▼
-AnyClaw CLI (anyclaw run ...)
+AnyClaw CLI (anyclaw run pkg cmd)
 ```
 
 The extension runs commands in an isolated Chrome window, separate from your normal browsing. Sessions auto-close after 30 seconds of inactivity.
@@ -282,7 +286,7 @@ commands:
 | `anyclaw search <keyword>` | Search packages by name, description, or tag |
 | `anyclaw install <name\|url\|file\|dir>` | Install a package |
 | `anyclaw uninstall <name>` | Remove a package |
-| `anyclaw run <pkg/cmd> [args]` | Run a command |
+| `anyclaw run <pkg> <cmd> [flags]` | Run a command |
 | `anyclaw mcp [pkg]` | Start MCP server (stdin/stdout) |
 | `anyclaw skills [pkg]` | Generate SKILL.md for Claude Code |
 | `anyclaw auth <pkg> <api-key>` | Set API key for a package |

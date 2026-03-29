@@ -25,9 +25,9 @@ Examples:
   anyclaw site list                     # list all available adapters
   anyclaw site list zhihu               # list zhihu adapters
   anyclaw site info zhihu/hot           # show adapter details
-  anyclaw site zhihu/hot                # run zhihu hot list
-  anyclaw site twitter/search "AI"      # search Twitter
-  anyclaw site hackernews/top --limit 5 # top 5 HN stories`,
+  anyclaw site zhihu hot                # run zhihu hot list
+  anyclaw site twitter search "AI"      # search Twitter
+  anyclaw site hackernews top --limit 5 # top 5 HN stories`,
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {

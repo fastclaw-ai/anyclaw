@@ -9,34 +9,84 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"text/tabwriter"
 	"github.com/fastclaw-ai/anyclaw/internal/adapter"
 	"github.com/fastclaw-ai/anyclaw/internal/pkg"
 	"github.com/spf13/cobra"
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run <package/command> [--arg value ...]",
+	Use:   "run <package> <command> [flags]",
 	Short: "Run a command from an installed package",
 	Long: `Run a command from an installed package.
 
 Examples:
-  anyclaw run translator/translate --q hello
-  anyclaw run bilibili/hot --limit 5
-  anyclaw run bilibili/search --keyword "AI"`,
-	Args: cobra.MinimumNArgs(1),
+  anyclaw run hackernews top --limit 5
+  anyclaw run translator translate --q hello
+  anyclaw run bilibili hot --limit 5
+  anyclaw run bilibili search --keyword "AI"
+
+  # Slash format also supported (backward compat)
+  anyclaw run hackernews/top --limit 5
+
+  # Package with single command (command name optional)
+  anyclaw run translator --q hello`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Handle: anyclaw run --help / anyclaw run -h / anyclaw run (no args)
+		if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
+			return cmd.Help()
+		}
+
 		store, err := pkg.NewStore()
 		if err != nil {
 			return err
 		}
 
-		pkgName, target, err := resolveCommand(store, args[0])
-		if err != nil {
-			return err
+		var pkgName string
+		var target *pkg.Command
+		var remaining []string
+
+		first := args[0]
+
+		if strings.Contains(first, "/") {
+			// Slash format: anyclaw run pkg/cmd [flags]
+			pkgName, target, err = resolveCommand(store, first)
+			if err != nil {
+				return err
+			}
+			remaining = args[1:]
+		} else if len(args) > 1 && !strings.HasPrefix(args[1], "-") {
+			// Space format: anyclaw run pkg cmd [flags]
+			combined := first + "/" + args[1]
+			pkgName, target, err = resolveCommand(store, combined)
+			if err != nil {
+				// Fallback: maybe first arg is a single-command package
+				pkgName, target, err = resolveCommand(store, first)
+				if err != nil {
+					return fmt.Errorf("command %q not found in package %q", args[1], first)
+				}
+				remaining = args[1:]
+			} else {
+				remaining = args[2:]
+			}
+		} else {
+			// Single arg: package with one command, or command auto-find
+			// Check for help on package
+			if len(args) == 1 || (len(args) > 1 && (args[1] == "--help" || args[1] == "-h")) {
+				if m, mErr := store.Get(first); mErr == nil && len(m.Commands) > 1 {
+					printPackageHelp(m)
+					return nil
+				}
+			}
+			pkgName, target, err = resolveCommand(store, first)
+			if err != nil {
+				return err
+			}
+			remaining = args[1:]
 		}
 
 		// Check for --help
-		for _, a := range args[1:] {
+		for _, a := range remaining {
 			if a == "--help" || a == "-h" {
 				printCommandHelp(pkgName, target)
 				return nil
@@ -44,7 +94,7 @@ Examples:
 		}
 
 		// Parse remaining flags as params
-		params := parseRunArgs(cmd, args[1:], target)
+		params := parseRunArgs(cmd, remaining, target)
 
 		// Create adapter and execute
 		manifest, _ := store.Get(pkgName)
@@ -62,7 +112,7 @@ Examples:
 		}
 
 		// If command has columns defined, render as table
-		jsonOutput := hasFlag(args[1:], "--json")
+		jsonOutput := hasFlag(remaining, "--json")
 		if !jsonOutput && len(target.Columns) > 0 {
 			printTable(result.Content, target.Columns)
 		} else {
@@ -212,7 +262,7 @@ func resolveCommand(store *pkg.Store, input string) (string, *pkg.Command, error
 			if c.Description != "" {
 				desc = "  " + c.Description
 			}
-			cmds = append(cmds, fmt.Sprintf("  %s/%s%s", m.Name, c.Name, desc))
+			cmds = append(cmds, fmt.Sprintf("  %s %s%s", m.Name, c.Name, desc))
 		}
 		return "", nil, fmt.Errorf("package %q has multiple commands:\n%s", name, strings.Join(cmds, "\n"))
 	}
@@ -251,13 +301,32 @@ func resolveCommand(store *pkg.Store, input string) (string, *pkg.Command, error
 	return "", nil, fmt.Errorf("command %q not found in any installed package", name)
 }
 
+func printPackageHelp(m *pkg.Manifest) {
+	desc := m.Name
+	if m.Description != "" {
+		desc = m.Name + " — " + m.Description
+	}
+	fmt.Println(desc)
+	fmt.Println()
+	fmt.Println("Commands:")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	for _, c := range m.Commands {
+		fmt.Fprintf(w, "  %s\t%s\n", c.Name, c.Description)
+	}
+	w.Flush()
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Printf("  anyclaw run %s <command> [flags]\n", m.Name)
+	fmt.Printf("  anyclaw %s <command> [flags]\n", m.Name)
+}
+
 func printCommandHelp(pkgName string, cmd *pkg.Command) {
 	if cmd.Description != "" {
 		fmt.Println(cmd.Description)
 		fmt.Println()
 	}
 
-	fmt.Printf("Usage:\n  anyclaw run %s/%s [flags]\n", pkgName, cmd.Name)
+	fmt.Printf("Usage:\n  anyclaw run %s %s [flags]\n", pkgName, cmd.Name)
 
 	if len(cmd.Args) > 0 {
 		fmt.Println("\nFlags:")
