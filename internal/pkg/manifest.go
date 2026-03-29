@@ -81,9 +81,10 @@ type Auth struct {
 
 // ScriptConfig describes how to run a script for a command.
 type ScriptConfig struct {
-	Runtime string `yaml:"runtime"` // "python", "node"
+	Runtime string `yaml:"runtime"`          // "python", "node", "bb-site"
 	File    string `yaml:"file"`
-	Code    string `yaml:"code"` // inline script content
+	Code    string `yaml:"code"`             // inline script content
+	Domain  string `yaml:"domain,omitempty"` // for bb-site runtime: domain to navigate to
 }
 
 // LoadManifest reads a manifest.yaml file.

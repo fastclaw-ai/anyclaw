@@ -34,6 +34,19 @@ Examples:
 		name := args[0]
 		customName, _ := cmd.Flags().GetString("name")
 
+		// Handle repo/package prefix format: "opencli/weibo" or "bb-sites/zhihu"
+		if strings.Contains(name, "/") && !strings.HasPrefix(name, "http") && !isLocalFile(name) && !isLocalDir(name) {
+			parts := strings.SplitN(name, "/", 2)
+			repoName, pkgName := parts[0], parts[1]
+			cfg, err := registry.LoadRepoConfig()
+			if err == nil {
+				if repo, ok := cfg.GetRepo(repoName); ok {
+					return installFromRepo(repo, pkgName, customName)
+				}
+			}
+			// Not a known repo prefix, fall through to normal install
+		}
+
 		// Remote URL
 		if strings.HasPrefix(name, "http://") || strings.HasPrefix(name, "https://") {
 			// GitHub repo
@@ -923,6 +936,172 @@ func parseTSCommand(filename string, code string) *tsCommandInfo {
 	}
 
 	return info
+}
+
+func installFromRepo(repo *registry.Repo, pkgName string, customName string) error {
+	switch repo.Type {
+	case "opencli":
+		// opencli URL format: https://github.com/jackwener/opencli/tree/main/src/clis
+		// Package is at URL/pkgName
+		pkgURL := strings.TrimSuffix(repo.URL, "/") + "/" + pkgName
+		return installFromGitHub(pkgURL, customName)
+	case "bb-sites":
+		// bb-sites: install as a site adapter package via browser bridge
+		return installBBSitesPackage(repo.URL, pkgName, customName)
+	default:
+		// Standard anyclaw repo: fetch index and install from it
+		return installFromRepoIndex(repo, pkgName, customName)
+	}
+}
+
+func installBBSitesPackage(repoURL string, pkgName string, customName string) error {
+	// Parse GitHub URL to get owner/repo
+	repoURL = strings.TrimSuffix(repoURL, "/")
+	parts := strings.Split(repoURL, "/")
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid GitHub URL: %s", repoURL)
+	}
+	owner := parts[3]
+	repo := parts[4]
+
+	fmt.Fprintf(os.Stderr, "Fetching %s/%s/%s ...\n", owner, repo, pkgName)
+
+	// List contents of the package directory
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, pkgName)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return fmt.Errorf("fetch bb-sites package: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("bb-sites package %q not found (HTTP %d)", pkgName, resp.StatusCode)
+	}
+
+	var contents []struct {
+		Name        string `json:"name"`
+		DownloadURL string `json:"download_url"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return fmt.Errorf("parse bb-sites contents: %w", err)
+	}
+
+	effectiveName := pkgName
+	if customName != "" {
+		effectiveName = customName
+	}
+
+	manifest := &pkg.Manifest{
+		Name:        effectiveName,
+		Version:     "1.0.0",
+		Description: pkgName + " site tools (bb-sites)",
+		Adapter:     "bb-site",
+		Source:      "bb-sites:" + owner + "/" + repo + "/" + pkgName,
+	}
+
+	files := make(map[string][]byte)
+
+	for _, f := range contents {
+		ext := strings.ToLower(filepath.Ext(f.Name))
+		if ext != ".js" {
+			continue
+		}
+
+		data, err := fetchURL(f.DownloadURL)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: skip %s: %v\n", f.Name, err)
+			continue
+		}
+
+		// Parse the JS file to extract command metadata
+		cmdName := strings.TrimSuffix(f.Name, ext)
+		code := string(data)
+
+		// Try to extract domain from the JS (look for URL patterns)
+		domain := extractDomainFromJS(code)
+
+		// Extract the function body — bb-sites typically export a function
+		// Wrap code so it's callable
+		funcCode := code
+
+		command := pkg.Command{
+			Name:        cmdName,
+			Description: fmt.Sprintf("%s from %s", cmdName, pkgName),
+			Script: &pkg.ScriptConfig{
+				Runtime: "bb-site",
+				Code:    funcCode,
+				Domain:  domain,
+			},
+		}
+
+		manifest.Commands = append(manifest.Commands, command)
+		files[f.Name] = data
+	}
+
+	if len(manifest.Commands) == 0 {
+		return fmt.Errorf("no JS commands found in bb-sites/%s", pkgName)
+	}
+
+	store, err := pkg.NewStore()
+	if err != nil {
+		return err
+	}
+
+	if err := store.Install(manifest, files); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(os.Stderr, "Installed %s (%d commands)\n", manifest.Name, len(manifest.Commands))
+	for _, cmd := range manifest.Commands {
+		fmt.Fprintf(os.Stderr, "  - %s: %s\n", cmd.Name, cmd.Description)
+	}
+	return nil
+}
+
+// extractDomainFromJS tries to find a domain from URL literals in JS code.
+func extractDomainFromJS(code string) string {
+	re := regexp.MustCompile(`https?://([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z0-9][-a-zA-Z0-9.]+)`)
+	m := re.FindStringSubmatch(code)
+	if len(m) > 1 {
+		return m[1]
+	}
+	return ""
+}
+
+func installFromRepoIndex(repo *registry.Repo, pkgName string, customName string) error {
+	// Fetch the repo's index.yaml
+	indexURL := strings.TrimSuffix(repo.URL, "/")
+	if !strings.HasSuffix(indexURL, ".yaml") && !strings.HasSuffix(indexURL, ".yml") {
+		indexURL += "/index.yaml"
+	}
+
+	fmt.Fprintf(os.Stderr, "Fetching index from %s ...\n", repo.Name)
+
+	data, err := fetchURL(indexURL)
+	if err != nil {
+		return fmt.Errorf("fetch repo index: %w", err)
+	}
+
+	var idx registry.Index
+	if err := yaml.Unmarshal(data, &idx); err != nil {
+		return fmt.Errorf("parse repo index: %w", err)
+	}
+
+	entry, found := idx.Lookup(pkgName)
+	if !found {
+		return fmt.Errorf("package %q not found in repo %q", pkgName, repo.Name)
+	}
+
+	fmt.Fprintf(os.Stderr, "Found: %s - %s\n", entry.Name, entry.Description)
+
+	source := entry.Source
+	if entry.Type == "manifest" {
+		return installManifestFromURL(source, customName)
+	}
+	if strings.Contains(source, "github.com/") {
+		return installFromGitHub(source, customName)
+	}
+	return installFromURL(source, customName)
 }
 
 func fetchURL(url string) ([]byte, error) {
