@@ -80,6 +80,9 @@ var repoAddCmd = &cobra.Command{
 				repoType = "opencli"
 			} else if strings.Contains(url, "bb-sites") || strings.Contains(url, "bb-browser") {
 				repoType = "bb-sites"
+			} else if strings.Contains(url, "github.com/") && strings.Contains(url, "/tree/") {
+				// GitHub tree URL pointing to a skills/packages directory
+				repoType = "github-skills"
 			} else {
 				repoType = "anyclaw"
 			}
@@ -150,14 +153,8 @@ var repoUpdateCmd = &cobra.Command{
 					continue
 				}
 				updated++
-			case "opencli":
-				// Verify connectivity
-				resp, err := http.Head(repo.URL)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
-					continue
-				}
-				resp.Body.Close()
+			case "opencli", "github-skills":
+				// No connectivity check — buildRepoCache uses GitHub Contents API
 				updated++
 			case "clawhub":
 				// Connectivity check only — cache build below
@@ -206,7 +203,7 @@ func buildRepoCache(repo *registry.Repo) (int, error) {
 	var pkgs []registry.CachePackage
 
 	switch repo.Type {
-	case "opencli":
+	case "opencli", "github-skills":
 		items, err := fetchGitHubDirAll(repo.URL)
 		if err != nil {
 			return 0, err
@@ -443,7 +440,7 @@ func fetchAnyclawIndex(repo *registry.Repo) ([]registry.CachePackage, error) {
 }
 
 func init() {
-	repoAddCmd.Flags().String("type", "", "repo type: anyclaw, opencli, bb-sites")
+	repoAddCmd.Flags().String("type", "", "repo type: anyclaw, opencli, bb-sites, github-skills")
 	repoCmd.AddCommand(repoListCmd, repoAddCmd, repoRemoveCmd, repoUpdateCmd)
 	rootCmd.AddCommand(repoCmd)
 }

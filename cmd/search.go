@@ -19,16 +19,16 @@ import (
 var searchCmd = &cobra.Command{
 	Use:   "search <keyword>",
 	Short: "Search packages across all repos",
-	Long: `Search packages across all configured repos and the anyclaw hub.
+	Long: `Search packages across all configured repos and the anyclaw registry.
 
-  anyclaw search <keyword>             Search hub first, then all repos
-  anyclaw search <keyword> --repo hub  Search anyclaw hub only
-  anyclaw search <keyword> --repo opencli  Search a specific repo
-  anyclaw search repo <keyword>        Search configured repos only
-  anyclaw search hub <keyword>         Search the anyclaw hub only
+  anyclaw search <keyword>                  Search anyclaw registry first, then all repos
+  anyclaw search <keyword> --repo anyclaw   Search the anyclaw registry only
+  anyclaw search <keyword> --repo opencli   Search a specific repo
+  anyclaw search repo <keyword>             Search configured repos only
+  anyclaw search anyclaw <keyword>          Search the anyclaw registry only
 
 Flags:
-  --repo    Filter by repo name (hub, opencli, bb-sites, clawhub, ...)
+  --repo    Filter by repo name (anyclaw, opencli, bb-sites, ...)
   --page    Page number (default 1)
   --limit   Results per page (default 20)
   --json    Output as JSON`,
@@ -45,8 +45,8 @@ Flags:
 			case "repo":
 				repoFilter = "*repos*"
 				args = args[1:]
-			case "hub":
-				repoFilter = "hub"
+			case "anyclaw", "hub":
+				repoFilter = "anyclaw"
 				args = args[1:]
 			}
 		}
@@ -73,11 +73,11 @@ func searchAllWithOptions(keyword, repoFilter string, page, limit int, jsonOut b
 	kw := strings.ToLower(keyword)
 	var results []searchResult
 
-	hubOnly := repoFilter == "hub"
+	hubOnly := repoFilter == "anyclaw"
 	reposOnly := repoFilter == "*repos*"
-	specificRepo := repoFilter != "" && repoFilter != "hub" && repoFilter != "*repos*"
+	specificRepo := repoFilter != "" && repoFilter != "anyclaw" && repoFilter != "*repos*"
 
-	// 1. anyclaw hub first (highest priority)
+	// 1. anyclaw registry first (highest priority)
 	if !reposOnly && !specificRepo {
 		idx, err := registry.FetchIndex()
 		if err == nil {
@@ -85,18 +85,18 @@ func searchAllWithOptions(keyword, repoFilter string, page, limit int, jsonOut b
 				results = append(results, searchResult{
 					Name:        p.Name,
 					Description: p.Description,
-					Repo:        "hub",
+					Repo:        "anyclaw",
 				})
 			}
 		}
-	} else if repoFilter == "hub" {
+	} else if repoFilter == "anyclaw" {
 		idx, err := registry.FetchIndex()
 		if err == nil {
 			for _, p := range idx.Search(keyword) {
 				results = append(results, searchResult{
 					Name:        p.Name,
 					Description: p.Description,
-					Repo:        "hub",
+					Repo:        "anyclaw",
 				})
 			}
 		}
@@ -271,7 +271,7 @@ func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) 
 
 	// Fall back to live search
 	switch repo.Type {
-	case "opencli":
+	case "opencli", "github-skills":
 		return searchGitHubDir(repo.URL, keyword)
 	case "bb-sites":
 		return searchGitHubDir(repo.URL, keyword)
@@ -391,7 +391,7 @@ func searchRepoIndex(repo *registry.Repo, keyword string) ([]repoMatch, error) {
 }
 
 func init() {
-	searchCmd.Flags().String("repo", "", "Filter by repo name (hub, opencli, bb-sites, clawhub, ...)")
+	searchCmd.Flags().String("repo", "", "Filter by repo name (anyclaw, opencli, bb-sites, ...)")
 	searchCmd.Flags().Int("page", 1, "Page number")
 	searchCmd.Flags().Int("limit", 20, "Results per page")
 	searchCmd.Flags().Bool("json", false, "Output as JSON")
