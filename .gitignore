@@ -21,3 +21,14 @@ Thumbs.db
 *.local.toml
 *.local.json
 .env
+
+# Build output
+dist/
+
+# Test artifacts
+/tmp/
+*.test
+
+# Local dev
+*.local.*
+.anyclaw/
