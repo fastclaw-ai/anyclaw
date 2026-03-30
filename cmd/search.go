@@ -248,7 +248,12 @@ type repoMatch struct {
 }
 
 func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) {
-	// Try cache first for fast local search
+	// clawhub: always use live vector search (cache is for offline/fallback only)
+	if repo.Type == "clawhub" {
+		return searchClawhub(keyword)
+	}
+
+	// Other repos: try cache first for fast local search
 	if registry.CacheExists(repo.Name) {
 		cache, err := registry.ReadCache(repo.Name)
 		if err == nil {
@@ -270,8 +275,6 @@ func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) 
 		return searchGitHubDir(repo.URL, keyword)
 	case "bb-sites":
 		return searchGitHubDir(repo.URL, keyword)
-	case "clawhub":
-		return searchClawhub(keyword)
 	default:
 		return searchRepoIndex(repo, keyword)
 	}

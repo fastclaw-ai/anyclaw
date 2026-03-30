@@ -358,7 +358,7 @@ func fetchBBSitesAll() ([]registry.CachePackage, error) {
 // The clawhub list API requires auth, so we use vector search with common terms.
 func fetchClawhubAll() ([]registry.CachePackage, error) {
 	// Broad search terms to populate the cache
-	terms := []string{"web", "data", "search", "news", "social", "code", "file", "ai", "api", "browser", "finance", "tool"}
+	terms := []string{"web", "data", "search", "news", "social", "code", "file", "ai", "api", "browser", "finance", "tool", "domain", "email", "github", "image", "video", "music", "chart", "translate", "weather", "stock", "crypto", "pdf", "text", "scrape", "fetch", "read", "write", "database", "cloud", "deploy", "monitor", "alert", "notion", "slack", "discord", "twitter", "git"}
 	seen := make(map[string]bool)
 	var pkgs []registry.CachePackage
 
