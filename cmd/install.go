@@ -1048,9 +1048,8 @@ func installFromClawhub(slug string, customName string) error {
 			Version     string `json:"version"`
 		}
 		if err := json.Unmarshal(data, &skillJSON); err == nil {
-			if skillJSON.Name != "" {
-				pkgName = skillJSON.Name
-			}
+			// Use slug as package name (not display name) for predictable CLI usage
+			// Display name goes into description prefix
 			if skillJSON.Description != "" {
 				description = skillJSON.Description
 			}
