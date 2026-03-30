@@ -19,11 +19,11 @@ import (
 var searchCmd = &cobra.Command{
 	Use:   "search <keyword>",
 	Short: "Search packages in the registry",
-	Long: `Search for packages. Supports subcommands:
+	Long: `Search packages across all configured repos and the anyclaw hub.
 
-  anyclaw search <keyword>        Search the default registry (hub)
-  anyclaw search hub <keyword>    Search the default registry
-  anyclaw search repo <keyword>   Search all configured repositories`,
+  anyclaw search <keyword>        Search all repos + hub (default)
+  anyclaw search repo <keyword>   Search configured repos only (opencli, bb-sites, clawhub, ...)
+  anyclaw search hub <keyword>    Search the anyclaw hub only`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) >= 2 {
@@ -34,9 +34,51 @@ var searchCmd = &cobra.Command{
 				return searchHub(args[1])
 			}
 		}
-		// Default: search hub (backward compat)
-		return searchHub(args[0])
+		// Default: search all repos + hub combined (like helm search repo)
+		return searchAll(args[0])
 	},
+}
+
+// searchAll searches all configured repos plus the anyclaw hub.
+func searchAll(keyword string) error {
+	kw := strings.ToLower(keyword)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "NAME\tDESCRIPTION\tREPO\n")
+	found := 0
+
+	// Search configured repos first
+	cfg, _ := registry.LoadRepoConfig()
+	if cfg != nil {
+		for _, repo := range cfg.Repos {
+			matches, err := searchSingleRepo(&repo, kw)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", repo.Name, err)
+				continue
+			}
+			for _, m := range matches {
+				fmt.Fprintf(w, "%s/%s\t%s\t%s\n", repo.Name, m.name, m.description, repo.Name)
+				found++
+			}
+		}
+	}
+
+	// Search anyclaw hub
+	idx, err := registry.FetchIndex()
+	if err == nil {
+		for _, p := range idx.Search(keyword) {
+			fmt.Fprintf(w, "%s\t%s\thub\n", p.Name, p.Description)
+			found++
+		}
+	}
+
+	if found == 0 {
+		fmt.Printf("No packages found matching %q.\n", keyword)
+		return nil
+	}
+
+	w.Flush()
+	fmt.Fprintf(os.Stderr, "\n%d results\n", found)
+	return nil
 }
 
 func searchHub(keyword string) error {
