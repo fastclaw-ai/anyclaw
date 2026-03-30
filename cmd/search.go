@@ -18,66 +18,166 @@ import (
 
 var searchCmd = &cobra.Command{
 	Use:   "search <keyword>",
-	Short: "Search packages in the registry",
+	Short: "Search packages across all repos",
 	Long: `Search packages across all configured repos and the anyclaw hub.
 
-  anyclaw search <keyword>        Search all repos + hub (default)
-  anyclaw search repo <keyword>   Search configured repos only (opencli, bb-sites, clawhub, ...)
-  anyclaw search hub <keyword>    Search the anyclaw hub only`,
+  anyclaw search <keyword>             Search hub first, then all repos
+  anyclaw search <keyword> --repo hub  Search anyclaw hub only
+  anyclaw search <keyword> --repo opencli  Search a specific repo
+  anyclaw search repo <keyword>        Search configured repos only
+  anyclaw search hub <keyword>         Search the anyclaw hub only
+
+Flags:
+  --repo    Filter by repo name (hub, opencli, bb-sites, clawhub, ...)
+  --page    Page number (default 1)
+  --limit   Results per page (default 20)
+  --json    Output as JSON`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if len(args) >= 2 {
+		repoFilter, _ := cmd.Flags().GetString("repo")
+		page, _ := cmd.Flags().GetInt("page")
+		limit, _ := cmd.Flags().GetInt("limit")
+		jsonOut, _ := cmd.Flags().GetBool("json")
+
+		// Handle subcommands for backward compat
+		if len(args) >= 2 && repoFilter == "" {
 			switch args[0] {
 			case "repo":
-				return searchRepos(args[1])
+				repoFilter = "*repos*"
+				args = args[1:]
 			case "hub":
-				return searchHub(args[1])
+				repoFilter = "hub"
+				args = args[1:]
 			}
 		}
-		// Default: search all repos + hub combined (like helm search repo)
-		return searchAll(args[0])
+
+		return searchAllWithOptions(args[0], repoFilter, page, limit, jsonOut)
 	},
 }
 
-// searchAll searches all configured repos plus the anyclaw hub.
-func searchAll(keyword string) error {
+type searchResult struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Repo        string `json:"repo"`
+}
+
+// searchAllWithOptions is the unified search with filtering, pagination, and JSON output.
+func searchAllWithOptions(keyword, repoFilter string, page, limit int, jsonOut bool) error {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 20
+	}
+
 	kw := strings.ToLower(keyword)
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tDESCRIPTION\tREPO\n")
-	found := 0
+	var results []searchResult
 
-	// Search configured repos first
-	cfg, _ := registry.LoadRepoConfig()
-	if cfg != nil {
-		for _, repo := range cfg.Repos {
-			matches, err := searchSingleRepo(&repo, kw)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", repo.Name, err)
-				continue
+	hubOnly := repoFilter == "hub"
+	reposOnly := repoFilter == "*repos*"
+	specificRepo := repoFilter != "" && repoFilter != "hub" && repoFilter != "*repos*"
+
+	// 1. anyclaw hub first (highest priority)
+	if !reposOnly && !specificRepo {
+		idx, err := registry.FetchIndex()
+		if err == nil {
+			for _, p := range idx.Search(keyword) {
+				results = append(results, searchResult{
+					Name:        p.Name,
+					Description: p.Description,
+					Repo:        "hub",
+				})
 			}
-			for _, m := range matches {
-				fmt.Fprintf(w, "%s/%s\t%s\t%s\n", repo.Name, m.name, m.description, repo.Name)
-				found++
+		}
+	} else if repoFilter == "hub" {
+		idx, err := registry.FetchIndex()
+		if err == nil {
+			for _, p := range idx.Search(keyword) {
+				results = append(results, searchResult{
+					Name:        p.Name,
+					Description: p.Description,
+					Repo:        "hub",
+				})
 			}
 		}
 	}
 
-	// Search anyclaw hub
-	idx, err := registry.FetchIndex()
-	if err == nil {
-		for _, p := range idx.Search(keyword) {
-			fmt.Fprintf(w, "%s\t%s\thub\n", p.Name, p.Description)
-			found++
+	// 2. Configured repos
+	if !hubOnly {
+		cfg, _ := registry.LoadRepoConfig()
+		if cfg != nil {
+			for _, repo := range cfg.Repos {
+				// Filter by --repo if specified
+				if specificRepo && !strings.EqualFold(repo.Name, repoFilter) {
+					continue
+				}
+				matches, err := searchSingleRepo(&repo, kw)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", repo.Name, err)
+					continue
+				}
+				for _, m := range matches {
+					results = append(results, searchResult{
+						Name:        repo.Name + "/" + m.name,
+						Description: m.description,
+						Repo:        repo.Name,
+					})
+				}
+			}
 		}
 	}
 
-	if found == 0 {
-		fmt.Printf("No packages found matching %q.\n", keyword)
+	if len(results) == 0 {
+		if jsonOut {
+			fmt.Println("[]")
+		} else {
+			fmt.Printf("No packages found matching %q.\n", keyword)
+		}
 		return nil
 	}
 
+	// Pagination
+	total := len(results)
+	start := (page - 1) * limit
+	if start >= total {
+		if jsonOut {
+			fmt.Println("[]")
+		} else {
+			fmt.Printf("No more results (total: %d)\n", total)
+		}
+		return nil
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	pageResults := results[start:end]
+	totalPages := (total + limit - 1) / limit
+
+	// Output
+	if jsonOut {
+		out, _ := json.MarshalIndent(pageResults, "", "  ")
+		fmt.Println(string(out))
+		return nil
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "NAME\tDESCRIPTION\tREPO\n")
+	for _, r := range pageResults {
+		desc := r.Description
+		if len(desc) > 50 {
+			desc = desc[:47] + "..."
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\n", r.Name, desc, r.Repo)
+	}
 	w.Flush()
-	fmt.Fprintf(os.Stderr, "\n%d results\n", found)
+
+	fmt.Fprintf(os.Stderr, "\nPage %d/%d (%d results). ", page, totalPages, total)
+	if page < totalPages {
+		fmt.Fprintf(os.Stderr, "Next: anyclaw search %q --page %d\n", keyword, page+1)
+	} else {
+		fmt.Fprintln(os.Stderr)
+	}
 	return nil
 }
 
@@ -271,5 +371,9 @@ func searchRepoIndex(repo *registry.Repo, keyword string) ([]repoMatch, error) {
 }
 
 func init() {
+	searchCmd.Flags().String("repo", "", "Filter by repo name (hub, opencli, bb-sites, clawhub, ...)")
+	searchCmd.Flags().Int("page", 1, "Page number")
+	searchCmd.Flags().Int("limit", 20, "Results per page")
+	searchCmd.Flags().Bool("json", false, "Output as JSON")
 	rootCmd.AddCommand(searchCmd)
 }
