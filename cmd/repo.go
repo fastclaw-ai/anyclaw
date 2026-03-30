@@ -294,16 +294,33 @@ func fetchBBSitesAll() ([]registry.CachePackage, error) {
 	}
 	bbDir := filepath.Join(home, ".anyclaw", "bb-sites")
 
-	// Try local clone first
-	entries, err := os.ReadDir(bbDir)
-	if err == nil {
+	// Try local clone first - bb-sites structure: platform/command.js
+	_, statErr := os.Stat(bbDir)
+	if statErr == nil {
 		var pkgs []registry.CachePackage
-		for _, e := range entries {
-			name := e.Name()
-			if strings.HasSuffix(name, ".js") {
-				pkgs = append(pkgs, registry.CachePackage{
-					Name: strings.TrimSuffix(name, ".js"),
-				})
+		entries, err := os.ReadDir(bbDir)
+		if err == nil {
+			for _, e := range entries {
+				if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || e.Name() == "node_modules" {
+					continue
+				}
+				platform := e.Name()
+				// Skip non-platform dirs
+				if platform == "CONTRIBUTING.md" || platform == "README.md" || platform == "SKILL.md" {
+					continue
+				}
+				subEntries, err := os.ReadDir(filepath.Join(bbDir, platform))
+				if err != nil {
+					continue
+				}
+				for _, se := range subEntries {
+					if !se.IsDir() && strings.HasSuffix(se.Name(), ".js") {
+						cmd := strings.TrimSuffix(se.Name(), ".js")
+						pkgs = append(pkgs, registry.CachePackage{
+							Name: platform + "/" + cmd,
+						})
+					}
+				}
 			}
 		}
 		return pkgs, nil
@@ -337,58 +354,54 @@ func fetchBBSitesAll() ([]registry.CachePackage, error) {
 	return pkgs, nil
 }
 
-// fetchClawhubAll fetches all skills from the ClawHub API with cursor pagination.
+// fetchClawhubAll builds a clawhub cache by searching for broad category terms.
+// The clawhub list API requires auth, so we use vector search with common terms.
 func fetchClawhubAll() ([]registry.CachePackage, error) {
+	// Broad search terms to populate the cache
+	terms := []string{"web", "data", "search", "news", "social", "code", "file", "ai", "api", "browser", "finance", "tool"}
+	seen := make(map[string]bool)
 	var pkgs []registry.CachePackage
-	cursor := ""
-	maxItems := 500
 
-	for {
-		url := "https://clawhub.ai/api/v1/skills?nonSuspicious=true&limit=100"
-		if cursor != "" {
-			url += "&cursor=" + cursor
-		}
-
-		resp, err := http.Get(url)
+	for _, term := range terms {
+		apiURL := fmt.Sprintf("https://clawhub.ai/api/v1/search?q=%s&limit=50", term)
+		resp, err := http.Get(apiURL)
 		if err != nil {
-			return nil, err
+			continue
 		}
 		body, err := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		if err != nil {
-			return nil, err
-		}
-		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("clawhub API: HTTP %d", resp.StatusCode)
+		if err != nil || resp.StatusCode >= 400 {
+			continue
 		}
 
 		var result struct {
-			Items []struct {
-				Slug    string `json:"slug"`
-				Name    string `json:"name"`
-				Summary string `json:"summary"`
-			} `json:"items"`
-			NextCursor *string `json:"nextCursor"`
+			Results []struct {
+				Slug        string `json:"slug"`
+				DisplayName string `json:"displayName"`
+				Summary     string `json:"summary"`
+			} `json:"results"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, err
+			continue
 		}
 
-		for _, item := range result.Items {
+		for _, item := range result.Results {
+			if seen[item.Slug] {
+				continue
+			}
+			seen[item.Slug] = true
 			desc := item.Summary
+			if len(desc) > 100 {
+				desc = desc[:97] + "..."
+			}
 			if desc == "" {
-				desc = item.Name
+				desc = item.DisplayName
 			}
 			pkgs = append(pkgs, registry.CachePackage{
 				Name:        item.Slug,
 				Description: desc,
 			})
 		}
-
-		if len(pkgs) >= maxItems || result.NextCursor == nil || *result.NextCursor == "" {
-			break
-		}
-		cursor = *result.NextCursor
 	}
 	return pkgs, nil
 }
