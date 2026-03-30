@@ -248,6 +248,23 @@ type repoMatch struct {
 }
 
 func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) {
+	// Try cache first for fast local search
+	if registry.CacheExists(repo.Name) {
+		cache, err := registry.ReadCache(repo.Name)
+		if err == nil {
+			kw := strings.ToLower(keyword)
+			var matches []repoMatch
+			for _, p := range cache.Packages {
+				if strings.Contains(strings.ToLower(p.Name), kw) ||
+					strings.Contains(strings.ToLower(p.Description), kw) {
+					matches = append(matches, repoMatch{name: p.Name, description: p.Description})
+				}
+			}
+			return matches, nil
+		}
+	}
+
+	// Fall back to live search
 	switch repo.Type {
 	case "opencli":
 		return searchGitHubDir(repo.URL, keyword)

@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -11,6 +13,7 @@ import (
 	"github.com/fastclaw-ai/anyclaw/internal/registry"
 	"github.com/fastclaw-ai/anyclaw/internal/site"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var repoCmd = &cobra.Command{
@@ -42,9 +45,14 @@ var repoListCmd = &cobra.Command{
 			fmt.Println("No repositories configured.")
 			return nil
 		}
-		fmt.Printf("%-15s %-12s %s\n", "NAME", "TYPE", "URL")
-		fmt.Println(strings.Repeat("─", 70))
+		fmt.Printf("%-15s %-12s %-30s %s\n", "NAME", "TYPE", "URL", "CACHE")
+		fmt.Println(strings.Repeat("─", 90))
 		for _, r := range cfg.Repos {
+			cacheInfo := "(no cache — run: anyclaw repo update)"
+			if cache, err := registry.ReadCache(r.Name); err == nil {
+				age := registry.FormatCacheAge(registry.CacheAgeDuration(cache))
+				cacheInfo = fmt.Sprintf("(%d packages, updated %s)", len(cache.Packages), age)
+			}
 			builtin := ""
 			for _, d := range registry.DefaultRepos {
 				if d.Name == r.Name {
@@ -53,6 +61,7 @@ var repoListCmd = &cobra.Command{
 				}
 			}
 			fmt.Printf("%-15s %-12s %s%s\n", r.Name, r.Type, r.URL, builtin)
+			fmt.Printf("%-15s %-12s %s\n", "", "", cacheInfo)
 		}
 		return nil
 	},
@@ -140,20 +149,27 @@ var repoUpdateCmd = &cobra.Command{
 					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
 					continue
 				}
-				fmt.Fprintf(os.Stderr, "✓ %s updated\n", repo.Name)
 				updated++
 			case "opencli":
-				// Nothing to cache locally — just verify connectivity
+				// Verify connectivity
 				resp, err := http.Head(repo.URL)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
 					continue
 				}
 				resp.Body.Close()
-				fmt.Fprintf(os.Stderr, "✓ %s ok\n", repo.Name)
+				updated++
+			case "clawhub":
+				// Connectivity check only — cache build below
+				resp, err := http.Head("https://clawhub.ai")
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "✗ %s: %v\n", repo.Name, err)
+					continue
+				}
+				resp.Body.Close()
 				updated++
 			default:
-				// Anyclaw-type repo: fetch and cache index.yaml
+				// Anyclaw-type repo: verify index.yaml
 				indexURL := strings.TrimSuffix(repo.URL, "/")
 				if !strings.HasSuffix(indexURL, ".yaml") && !strings.HasSuffix(indexURL, ".yml") {
 					indexURL += "/index.yaml"
@@ -168,14 +184,249 @@ var repoUpdateCmd = &cobra.Command{
 					fmt.Fprintf(os.Stderr, "✗ %s: HTTP %d\n", repo.Name, resp.StatusCode)
 					continue
 				}
-				fmt.Fprintf(os.Stderr, "✓ %s updated\n", repo.Name)
 				updated++
+			}
+
+			// Build cache for this repo
+			if n, err := buildRepoCache(&repo); err != nil {
+				fmt.Fprintf(os.Stderr, "✗ %s: cache failed: %v\n", repo.Name, err)
+			} else {
+				fmt.Fprintf(os.Stderr, "✓ %s: %d packages cached\n", repo.Name, n)
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "%d repos updated\n", updated)
+		fmt.Fprintf(os.Stderr, "\n%d repos updated. Search is now fast.\n", updated)
 		return nil
 	},
+}
+
+// buildRepoCache fetches the full package list for a repo and writes it to local cache.
+// Returns the number of packages cached.
+func buildRepoCache(repo *registry.Repo) (int, error) {
+	var pkgs []registry.CachePackage
+
+	switch repo.Type {
+	case "opencli":
+		items, err := fetchGitHubDirAll(repo.URL)
+		if err != nil {
+			return 0, err
+		}
+		pkgs = items
+
+	case "bb-sites":
+		items, err := fetchBBSitesAll()
+		if err != nil {
+			return 0, err
+		}
+		pkgs = items
+
+	case "clawhub":
+		items, err := fetchClawhubAll()
+		if err != nil {
+			return 0, err
+		}
+		pkgs = items
+
+	default:
+		// anyclaw-type: fetch index.yaml
+		items, err := fetchAnyclawIndex(repo)
+		if err != nil {
+			return 0, err
+		}
+		pkgs = items
+	}
+
+	entry := &registry.CacheEntry{
+		Repo:     repo.Name,
+		Packages: pkgs,
+	}
+	if err := registry.WriteCache(entry); err != nil {
+		return 0, err
+	}
+	return len(pkgs), nil
+}
+
+// fetchGitHubDirAll fetches all entries from a GitHub directory listing.
+func fetchGitHubDirAll(repoURL string) ([]registry.CachePackage, error) {
+	repoURL = strings.TrimSuffix(repoURL, "/")
+	parts := strings.Split(repoURL, "/")
+	if len(parts) < 5 {
+		return nil, fmt.Errorf("invalid GitHub URL: %s", repoURL)
+	}
+	owner := parts[3]
+	repo := parts[4]
+	subDir := ""
+	if len(parts) > 6 && parts[5] == "tree" {
+		subDir = strings.Join(parts[7:], "/")
+	}
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, subDir)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var contents []struct {
+		Name string `json:"name"`
+		Type string `json:"type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, err
+	}
+
+	var pkgs []registry.CachePackage
+	for _, c := range contents {
+		name := strings.TrimSuffix(c.Name, filepath.Ext(c.Name))
+		pkgs = append(pkgs, registry.CachePackage{Name: name})
+	}
+	return pkgs, nil
+}
+
+// fetchBBSitesAll lists packages from the local bb-sites clone or GitHub.
+func fetchBBSitesAll() ([]registry.CachePackage, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	bbDir := filepath.Join(home, ".anyclaw", "bb-sites")
+
+	// Try local clone first
+	entries, err := os.ReadDir(bbDir)
+	if err == nil {
+		var pkgs []registry.CachePackage
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasSuffix(name, ".js") {
+				pkgs = append(pkgs, registry.CachePackage{
+					Name: strings.TrimSuffix(name, ".js"),
+				})
+			}
+		}
+		return pkgs, nil
+	}
+
+	// Fallback to GitHub API
+	resp, err := http.Get("https://api.github.com/repos/epiral/bb-sites/contents")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var contents []struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
+		return nil, err
+	}
+
+	var pkgs []registry.CachePackage
+	for _, c := range contents {
+		if strings.HasSuffix(c.Name, ".js") {
+			pkgs = append(pkgs, registry.CachePackage{
+				Name: strings.TrimSuffix(c.Name, ".js"),
+			})
+		}
+	}
+	return pkgs, nil
+}
+
+// fetchClawhubAll fetches all skills from the ClawHub API with cursor pagination.
+func fetchClawhubAll() ([]registry.CachePackage, error) {
+	var pkgs []registry.CachePackage
+	cursor := ""
+	maxItems := 500
+
+	for {
+		url := "https://clawhub.ai/api/v1/skills?nonSuspicious=true&limit=100"
+		if cursor != "" {
+			url += "&cursor=" + cursor
+		}
+
+		resp, err := http.Get(url)
+		if err != nil {
+			return nil, err
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode >= 400 {
+			return nil, fmt.Errorf("clawhub API: HTTP %d", resp.StatusCode)
+		}
+
+		var result struct {
+			Items []struct {
+				Slug    string `json:"slug"`
+				Name    string `json:"name"`
+				Summary string `json:"summary"`
+			} `json:"items"`
+			NextCursor *string `json:"nextCursor"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, err
+		}
+
+		for _, item := range result.Items {
+			desc := item.Summary
+			if desc == "" {
+				desc = item.Name
+			}
+			pkgs = append(pkgs, registry.CachePackage{
+				Name:        item.Slug,
+				Description: desc,
+			})
+		}
+
+		if len(pkgs) >= maxItems || result.NextCursor == nil || *result.NextCursor == "" {
+			break
+		}
+		cursor = *result.NextCursor
+	}
+	return pkgs, nil
+}
+
+// fetchAnyclawIndex fetches packages from an anyclaw-type repo's index.yaml.
+func fetchAnyclawIndex(repo *registry.Repo) ([]registry.CachePackage, error) {
+	indexURL := strings.TrimSuffix(repo.URL, "/")
+	if !strings.HasSuffix(indexURL, ".yaml") && !strings.HasSuffix(indexURL, ".yml") {
+		indexURL += "/index.yaml"
+	}
+
+	resp, err := http.Get(indexURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var idx registry.Index
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := yaml.Unmarshal(body, &idx); err != nil {
+		return nil, fmt.Errorf("parse index: %w", err)
+	}
+
+	var pkgs []registry.CachePackage
+	for _, p := range idx.Packages {
+		pkgs = append(pkgs, registry.CachePackage{
+			Name:        p.Name,
+			Description: p.Description,
+		})
+	}
+	return pkgs, nil
 }
 
 func init() {
