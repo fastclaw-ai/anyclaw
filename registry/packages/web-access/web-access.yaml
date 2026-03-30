@@ -1,0 +1,164 @@
+# anyclaw format - Web Access CDP proxy browser automation
+# Requires web-access cdp-proxy running locally
+anyclaw: "1.0"
+name: web-access
+description: "Web Access - browser automation via CDP proxy (requires web-access cdp-proxy running)"
+
+commands:
+  - name: open
+    description: "Open a new browser tab with a URL"
+    args:
+      url:
+        type: string
+        required: true
+        description: "URL to open in new tab"
+      port:
+        type: int
+        default: "3456"
+        description: "CDP proxy port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.parse, urllib.error
+        args = json.load(sys.stdin)
+        url = args.get("url", "")
+        port = int(args.get("port", 3456))
+        if not url:
+            print(json.dumps({"error": "url is required"}))
+            sys.exit(1)
+        api_url = f"http://localhost:{port}/new?url={urllib.parse.quote(url, safe='')}"
+        try:
+            with urllib.request.urlopen(api_url, timeout=10) as resp:
+                result = json.load(resp)
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect to CDP proxy on port {port}. Start it first: node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &", "detail": str(e)}))
+            sys.exit(1)
+
+  - name: eval
+    description: "Evaluate JavaScript in a browser tab"
+    args:
+      code:
+        type: string
+        required: true
+        description: "JavaScript code to evaluate"
+      tab:
+        type: string
+        required: true
+        description: "Tab ID (from open command)"
+      port:
+        type: int
+        default: "3456"
+        description: "CDP proxy port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.parse, urllib.error
+        args = json.load(sys.stdin)
+        code = args.get("code", "")
+        tab = args.get("tab", "")
+        port = int(args.get("port", 3456))
+        if not code:
+            print(json.dumps({"error": "code is required"}))
+            sys.exit(1)
+        if not tab:
+            print(json.dumps({"error": "tab is required"}))
+            sys.exit(1)
+        api_url = f"http://localhost:{port}/eval?target={urllib.parse.quote(tab, safe='')}"
+        req = urllib.request.Request(api_url, data=code.encode("utf-8"), method="POST")
+        req.add_header("Content-Type", "text/plain")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.load(resp)
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect to CDP proxy on port {port}. Start it first: node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &", "detail": str(e)}))
+            sys.exit(1)
+
+  - name: screenshot
+    description: "Take a screenshot of a browser tab"
+    args:
+      tab:
+        type: string
+        required: true
+        description: "Tab ID (from open command)"
+      file:
+        type: string
+        default: "/tmp/screenshot.png"
+        description: "Output file path for screenshot"
+      port:
+        type: int
+        default: "3456"
+        description: "CDP proxy port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.parse, urllib.error
+        args = json.load(sys.stdin)
+        tab = args.get("tab", "")
+        file = args.get("file", "/tmp/screenshot.png")
+        port = int(args.get("port", 3456))
+        if not tab:
+            print(json.dumps({"error": "tab is required"}))
+            sys.exit(1)
+        api_url = f"http://localhost:{port}/screenshot?target={urllib.parse.quote(tab, safe='')}&file={urllib.parse.quote(file, safe='')}"
+        try:
+            with urllib.request.urlopen(api_url, timeout=15) as resp:
+                result = json.load(resp)
+            result["file"] = file
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect to CDP proxy on port {port}. Start it first: node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &", "detail": str(e)}))
+            sys.exit(1)
+
+  - name: close
+    description: "Close a browser tab"
+    args:
+      tab:
+        type: string
+        required: true
+        description: "Tab ID to close"
+      port:
+        type: int
+        default: "3456"
+        description: "CDP proxy port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.parse, urllib.error
+        args = json.load(sys.stdin)
+        tab = args.get("tab", "")
+        port = int(args.get("port", 3456))
+        if not tab:
+            print(json.dumps({"error": "tab is required"}))
+            sys.exit(1)
+        api_url = f"http://localhost:{port}/close?target={urllib.parse.quote(tab, safe='')}"
+        try:
+            with urllib.request.urlopen(api_url, timeout=5) as resp:
+                result = json.load(resp)
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect to CDP proxy on port {port}. Start it first: node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &", "detail": str(e)}))
+            sys.exit(1)
+
+  - name: status
+    description: "Check if CDP proxy is running"
+    args:
+      port:
+        type: int
+        default: "3456"
+        description: "CDP proxy port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.error
+        args = json.load(sys.stdin)
+        port = int(args.get("port", 3456))
+        try:
+            with urllib.request.urlopen(f"http://localhost:{port}/", timeout=3) as resp:
+                result = json.load(resp)
+            result["running"] = True
+            result["port"] = port
+            print(json.dumps(result))
+        except:
+            print(json.dumps({"running": False, "port": port, "hint": f"Start with: node ~/.claude/skills/web-access/scripts/cdp-proxy.mjs &"}))

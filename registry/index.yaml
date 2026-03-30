@@ -17,3 +17,21 @@ packages:
     type: anyclaw
     source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/query-domains/query-domains.yaml
     tags: [domain, whois, dns]
+
+  - name: jina
+    description: "Jina Reader - convert any URL to markdown, web search, grounding"
+    type: anyclaw
+    source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/jina/jina.yaml
+    tags: [web, reader, search, llm, scraping]
+
+  - name: grok-bridge
+    description: "Grok Bridge - use Grok AI via local Safari automation (requires setup)"
+    type: anyclaw
+    source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/grok-bridge/grok-bridge.yaml
+    tags: [ai, grok, browser, local]
+
+  - name: web-access
+    description: "Web Access - browser automation via CDP proxy (requires web-access setup)"
+    type: anyclaw
+    source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/web-access/web-access.yaml
+    tags: [browser, cdp, automation, scraping]

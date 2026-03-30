@@ -1,0 +1,84 @@
+# anyclaw format - Jina Reader API tools
+# Free, no auth needed: r.jina.ai, s.jina.ai, g.jina.ai
+anyclaw: "1.0"
+name: jina
+description: "Jina Reader - convert any URL to LLM-friendly markdown, web search, grounding"
+
+commands:
+  - name: read
+    description: "Convert any URL to clean markdown for LLM consumption"
+    args:
+      url:
+        type: string
+        required: true
+        description: "URL to convert (e.g. https://example.com)"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.parse
+        args = json.load(sys.stdin)
+        url = args.get("url", "")
+        if not url:
+            print(json.dumps({"error": "url is required"}))
+            sys.exit(1)
+        reader_url = "https://r.jina.ai/" + url
+        req = urllib.request.Request(reader_url, headers={"Accept": "text/plain", "User-Agent": "anyclaw/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content = resp.read().decode("utf-8")
+            print(json.dumps({"url": url, "content": content}))
+        except Exception as e:
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
+
+  - name: search
+    description: "Web search - returns structured results as markdown"
+    args:
+      q:
+        type: string
+        required: true
+        description: "Search query"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.parse
+        args = json.load(sys.stdin)
+        q = args.get("q", "")
+        if not q:
+            print(json.dumps({"error": "q is required"}))
+            sys.exit(1)
+        search_url = "https://s.jina.ai/" + urllib.parse.quote(q)
+        req = urllib.request.Request(search_url, headers={"Accept": "text/plain", "User-Agent": "anyclaw/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content = resp.read().decode("utf-8")
+            print(json.dumps({"query": q, "results": content}))
+        except Exception as e:
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)
+
+  - name: ground
+    description: "Ground/fact-check a URL or claim"
+    args:
+      url:
+        type: string
+        required: true
+        description: "URL to ground-check"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request
+        args = json.load(sys.stdin)
+        url = args.get("url", "")
+        if not url:
+            print(json.dumps({"error": "url is required"}))
+            sys.exit(1)
+        ground_url = "https://g.jina.ai/" + url
+        req = urllib.request.Request(ground_url, headers={"Accept": "text/plain", "User-Agent": "anyclaw/1.0"})
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                content = resp.read().decode("utf-8")
+            print(json.dumps({"url": url, "grounding": content}))
+        except Exception as e:
+            print(json.dumps({"error": str(e)}))
+            sys.exit(1)

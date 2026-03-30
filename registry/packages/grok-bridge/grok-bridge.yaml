@@ -1,0 +1,109 @@
+# anyclaw format - Grok Bridge via Safari automation
+# Requires grok-bridge server running locally
+anyclaw: "1.0"
+name: grok-bridge
+description: "Grok Bridge - use SuperGrok via local Safari automation bridge (requires grok-bridge server)"
+
+commands:
+  - name: chat
+    description: "Send a prompt to Grok (requires grok-bridge server running)"
+    args:
+      prompt:
+        type: string
+        required: true
+        description: "Prompt to send to Grok"
+      timeout:
+        type: int
+        default: "60"
+        description: "Timeout in seconds"
+      port:
+        type: int
+        default: "19998"
+        description: "grok-bridge server port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.error
+        args = json.load(sys.stdin)
+        port = int(args.get("port", 19998))
+        prompt = args.get("prompt", "")
+        timeout = int(args.get("timeout", 60))
+        if not prompt:
+            print(json.dumps({"error": "prompt is required"}))
+            sys.exit(1)
+        url = f"http://localhost:{port}/chat"
+        data = json.dumps({"prompt": prompt, "timeout": timeout}).encode()
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout+5) as resp:
+                result = json.load(resp)
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect to grok-bridge on port {port}. Start it first: python3 scripts/grok_bridge.py --port {port}", "detail": str(e)}))
+            sys.exit(1)
+
+  - name: status
+    description: "Check if grok-bridge server is running"
+    args:
+      port:
+        type: int
+        default: "19998"
+        description: "grok-bridge server port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.error
+        args = json.load(sys.stdin)
+        port = int(args.get("port", 19998))
+        try:
+            with urllib.request.urlopen(f"http://localhost:{port}/health", timeout=3) as resp:
+                result = json.load(resp)
+            result["running"] = True
+            result["port"] = port
+            print(json.dumps(result))
+        except:
+            print(json.dumps({"running": False, "port": port, "hint": f"Start with: python3 scripts/grok_bridge.py --port {port}"}))
+
+  - name: history
+    description: "Get current Grok conversation history"
+    args:
+      port:
+        type: int
+        default: "19998"
+        description: "grok-bridge server port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.error
+        args = json.load(sys.stdin)
+        port = int(args.get("port", 19998))
+        try:
+            with urllib.request.urlopen(f"http://localhost:{port}/history", timeout=5) as resp:
+                result = json.load(resp)
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect on port {port}", "detail": str(e)}))
+            sys.exit(1)
+
+  - name: new
+    description: "Start a new Grok conversation"
+    args:
+      port:
+        type: int
+        default: "19998"
+        description: "grok-bridge server port"
+    script:
+      runtime: python3
+      code: |
+        import json, sys, urllib.request, urllib.error
+        args = json.load(sys.stdin)
+        port = int(args.get("port", 19998))
+        data = b"{}"
+        req = urllib.request.Request(f"http://localhost:{port}/new", data=data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.load(resp)
+            print(json.dumps(result))
+        except urllib.error.URLError as e:
+            print(json.dumps({"error": f"Cannot connect on port {port}", "detail": str(e)}))
+            sys.exit(1)
