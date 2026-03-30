@@ -75,6 +75,11 @@ Examples:
 			return regErr
 		}
 
+		// Try clawhub as fallback (before system CLI)
+		if err := installFromClawhub(name, customName); err == nil {
+			return nil
+		}
+
 		// System CLI tool (fallback)
 		if path, err := exec.LookPath(name); err == nil {
 			return installFromCLI(path, name, customName)
@@ -938,6 +943,162 @@ func parseTSCommand(filename string, code string) *tsCommandInfo {
 	return info
 }
 
+func installFromClawhub(slug string, customName string) error {
+	// Check if npx is available
+	npxPath, err := exec.LookPath("npx")
+	if err != nil {
+		return fmt.Errorf("clawhub install requires Node.js (npx not found). Install Node.js: https://nodejs.org")
+	}
+
+	// Check if skill exists via API
+	apiURL := fmt.Sprintf("https://clawhub.ai/api/v1/skills/%s", slug)
+	resp, err := http.Get(apiURL)
+	if err != nil {
+		return fmt.Errorf("clawhub API error: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return fmt.Errorf("skill %q not found on clawhub", slug)
+	}
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("clawhub API: HTTP %d", resp.StatusCode)
+	}
+
+	var apiResp struct {
+		Skill struct {
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"skill"`
+		LatestVersion struct {
+			Version string `json:"version"`
+		} `json:"latestVersion"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return fmt.Errorf("parse clawhub response: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Installing from clawhub: %s ...\n", slug)
+
+	// Download via npx clawhub
+	tmpDir, err := os.MkdirTemp("", "anyclaw-clawhub-*")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cmd := exec.Command(npxPath, "clawhub@latest", "install", slug, "--dir", tmpDir, "--no-input")
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("clawhub install failed: %w", err)
+	}
+
+	// Find the downloaded files in tmpDir/slug/
+	srcDir := filepath.Join(tmpDir, slug)
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		// Try without slug subdirectory
+		srcDir = tmpDir
+	}
+
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return fmt.Errorf("read clawhub download: %w", err)
+	}
+
+	// Collect all files
+	files := make(map[string][]byte)
+	var collectFiles func(dir string, prefix string) error
+	collectFiles = func(dir string, prefix string) error {
+		dirEntries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
+		}
+		for _, e := range dirEntries {
+			relPath := e.Name()
+			if prefix != "" {
+				relPath = prefix + "/" + e.Name()
+			}
+			fullPath := filepath.Join(dir, e.Name())
+			if e.IsDir() {
+				if err := collectFiles(fullPath, relPath); err != nil {
+					return err
+				}
+			} else {
+				data, err := os.ReadFile(fullPath)
+				if err != nil {
+					return err
+				}
+				files[relPath] = data
+			}
+		}
+		return nil
+	}
+	if err := collectFiles(srcDir, ""); err != nil {
+		return fmt.Errorf("collect clawhub files: %w", err)
+	}
+
+	// Read skill.json for metadata if present
+	pkgName := slug
+	description := ""
+	version := "1.0.0"
+	if data, ok := files["skill.json"]; ok {
+		var skillJSON struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Version     string `json:"version"`
+		}
+		if err := json.Unmarshal(data, &skillJSON); err == nil {
+			if skillJSON.Name != "" {
+				pkgName = skillJSON.Name
+			}
+			if skillJSON.Description != "" {
+				description = skillJSON.Description
+			}
+			if skillJSON.Version != "" {
+				version = skillJSON.Version
+			}
+		}
+	}
+	if customName != "" {
+		pkgName = customName
+	}
+
+	manifest := &pkg.Manifest{
+		Name:        pkgName,
+		Version:     version,
+		Description: description,
+		Source:      "clawhub:" + slug,
+		Commands:    []pkg.Command{},
+	}
+
+	store, err := pkg.NewStore()
+	if err != nil {
+		return err
+	}
+
+	if err := store.Install(manifest, files); err != nil {
+		return err
+	}
+
+	// Count useful info
+	skillCount := 0
+	for name := range files {
+		if strings.ToUpper(filepath.Base(name)) == "SKILL.MD" {
+			skillCount++
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "Installed %s from clawhub (v%s)\n", manifest.Name, version)
+	if description != "" {
+		fmt.Fprintf(os.Stderr, "  %s\n", description)
+	}
+	if skillCount > 0 {
+		fmt.Fprintf(os.Stderr, "  Skills: %d SKILL.md file(s)\n", skillCount)
+	}
+	fmt.Fprintf(os.Stderr, "  Files: %d\n", len(entries))
+	return nil
+}
+
 func installFromRepo(repo *registry.Repo, pkgName string, customName string) error {
 	switch repo.Type {
 	case "opencli":
@@ -948,6 +1109,8 @@ func installFromRepo(repo *registry.Repo, pkgName string, customName string) err
 	case "bb-sites":
 		// bb-sites: install as a site adapter package via browser bridge
 		return installBBSitesPackage(repo.URL, pkgName, customName)
+	case "clawhub":
+		return installFromClawhub(pkgName, customName)
 	default:
 		// Standard anyclaw repo: fetch index and install from it
 		return installFromRepoIndex(repo, pkgName, customName)

@@ -83,6 +83,10 @@ func tryRunPackageCommand(args []string) error {
 
 	// Check if this is a help request or no-command for a package
 	if m, mErr := store.Get(input); mErr == nil {
+		// Skill-only package (no commands)
+		if len(m.Commands) == 0 {
+			return printSkillOnlyPackage(store, m.Name)
+		}
 		// "anyclaw hackernews" or "anyclaw hackernews --help"
 		if len(remaining) == 0 || remaining[0] == "--help" || remaining[0] == "-h" {
 			if len(m.Commands) > 1 {

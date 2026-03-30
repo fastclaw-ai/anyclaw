@@ -24,6 +24,7 @@ type RepoConfig struct {
 var DefaultRepos = []Repo{
 	{Name: "opencli", URL: "https://github.com/jackwener/opencli/tree/main/src/clis", Type: "opencli"},
 	{Name: "bb-sites", URL: "https://github.com/epiral/bb-sites", Type: "bb-sites"},
+	{Name: "clawhub", URL: "https://clawhub.ai", Type: "clawhub"},
 }
 
 func repoConfigPath() (string, error) {

@@ -1,10 +1,12 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -109,9 +111,46 @@ func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) 
 		return searchGitHubDir(repo.URL, keyword)
 	case "bb-sites":
 		return searchGitHubDir(repo.URL, keyword)
+	case "clawhub":
+		return searchClawhub(keyword)
 	default:
 		return searchRepoIndex(repo, keyword)
 	}
+}
+
+// searchClawhub searches clawhub for skills matching the keyword.
+func searchClawhub(keyword string) ([]repoMatch, error) {
+	npxPath, err := exec.LookPath("npx")
+	if err != nil {
+		return nil, fmt.Errorf("clawhub search requires Node.js (npx not found)")
+	}
+
+	cmd := exec.Command(npxPath, "clawhub@latest", "search", keyword, "--no-input")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("clawhub search failed: %w", err)
+	}
+
+	var matches []repoMatch
+	scanner := bufio.NewScanner(strings.NewReader(string(out)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		// Parse output: each line is "<slug>  <name>  (<score>)" or similar
+		// Split on multiple spaces
+		parts := strings.Fields(line)
+		if len(parts) >= 1 {
+			slug := parts[0]
+			desc := ""
+			if len(parts) >= 2 {
+				desc = strings.Join(parts[1:], " ")
+			}
+			matches = append(matches, repoMatch{name: slug, description: desc})
+		}
+	}
+	return matches, nil
 }
 
 // searchGitHubDir lists directories from a GitHub tree URL and matches names.

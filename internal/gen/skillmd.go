@@ -205,6 +205,13 @@ func WriteManifestSkillMD(w io.Writer, m *pkg.Manifest) {
 	}
 }
 
+// WriteManifestSkillMDCommands writes only the commands section (for hybrid packages).
+func WriteManifestSkillMDCommands(w io.Writer, m *pkg.Manifest) {
+	for _, cmd := range m.Commands {
+		writeManifestCommand(w, m.Name, &cmd)
+	}
+}
+
 func writeManifestCommand(w io.Writer, pkgName string, cmd *pkg.Command) {
 	fmt.Fprintf(w, "### %s\n\n", cmd.Name)
 	if cmd.Description != "" {

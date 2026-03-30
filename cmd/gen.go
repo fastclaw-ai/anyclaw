@@ -111,7 +111,27 @@ func skillFromPackages(output string, pkgFilter string) error {
 			return fmt.Errorf("create output file: %w", err)
 		}
 
-		gen.WriteManifestSkillMD(f, m)
+		// Check if package has an author-written SKILL.md
+		authorSkillPath := filepath.Join(store.PackageDir(m.Name), "SKILL.md")
+		authorSkill, readErr := os.ReadFile(authorSkillPath)
+
+		if readErr == nil && len(authorSkill) > 0 && len(m.Commands) > 0 {
+			// Hybrid: author SKILL.md + auto-generated commands
+			f.Write(authorSkill)
+			if !strings.HasSuffix(string(authorSkill), "\n") {
+				fmt.Fprintf(f, "\n")
+			}
+			fmt.Fprintf(f, "\n## Auto-generated Commands\n\n")
+			fmt.Fprintf(f, "The following commands are also available via `anyclaw run %s <command>`:\n\n", m.Name)
+			gen.WriteManifestSkillMDCommands(f, m)
+		} else if readErr == nil && len(authorSkill) > 0 {
+			// Skill-only: use author SKILL.md as-is
+			f.Write(authorSkill)
+		} else {
+			// No author SKILL.md: auto-generate from commands
+			gen.WriteManifestSkillMD(f, m)
+		}
+
 		f.Close()
 		fmt.Fprintf(os.Stderr, "SKILL.md written to %s\n", out)
 	}

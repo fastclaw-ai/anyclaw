@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -97,6 +98,8 @@ func showFromRepo(repoName string, pkgName string) error {
 }
 
 func printManifestInfo(m *pkg.Manifest, installed bool) {
+	store, _ := pkg.NewStore()
+
 	fmt.Printf("Name:        %s\n", m.Name)
 	if m.Description != "" {
 		fmt.Printf("Description: %s\n", m.Description)
@@ -116,6 +119,20 @@ func printManifestInfo(m *pkg.Manifest, installed bool) {
 	}
 	fmt.Printf("Version:     %s\n", v)
 
+	// Check for SKILL.md
+	hasSkill := false
+	if store != nil {
+		skillPath := filepath.Join(store.PackageDir(m.Name), "SKILL.md")
+		if _, err := os.Stat(skillPath); err == nil {
+			hasSkill = true
+		}
+	}
+
+	if hasSkill {
+		fmt.Println()
+		fmt.Println("Skills:      SKILL.md present")
+	}
+
 	if len(m.Commands) > 0 {
 		fmt.Println()
 		fmt.Println("Commands:")
@@ -124,6 +141,28 @@ func printManifestInfo(m *pkg.Manifest, installed bool) {
 			fmt.Fprintf(w, "  %s\t%s\n", c.Name, c.Description)
 		}
 		w.Flush()
+	}
+
+	// List files for skill packages
+	if hasSkill && store != nil {
+		pkgDir := store.PackageDir(m.Name)
+		entries, err := os.ReadDir(pkgDir)
+		if err == nil {
+			var fileNames []string
+			for _, e := range entries {
+				if e.IsDir() || e.Name() == "manifest.yaml" {
+					continue
+				}
+				fileNames = append(fileNames, e.Name())
+			}
+			if len(fileNames) > 0 {
+				fmt.Println()
+				fmt.Println("Files:")
+				for _, f := range fileNames {
+					fmt.Printf("  %s\n", f)
+				}
+			}
+		}
 	}
 }
 

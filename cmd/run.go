@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+
 	"github.com/fastclaw-ai/anyclaw/internal/adapter"
 	"github.com/fastclaw-ai/anyclaw/internal/pkg"
 	"github.com/spf13/cobra"
@@ -52,6 +53,9 @@ Examples:
 			// Slash format: anyclaw run pkg/cmd [flags]
 			pkgName, target, err = resolveCommand(store, first)
 			if err != nil {
+				if strings.HasPrefix(err.Error(), "skill-only:") {
+					return printSkillOnlyPackage(store, strings.TrimPrefix(err.Error(), "skill-only:"))
+				}
 				return err
 			}
 			remaining = args[1:]
@@ -63,6 +67,9 @@ Examples:
 				// Fallback: maybe first arg is a single-command package
 				pkgName, target, err = resolveCommand(store, first)
 				if err != nil {
+					if strings.HasPrefix(err.Error(), "skill-only:") {
+						return printSkillOnlyPackage(store, strings.TrimPrefix(err.Error(), "skill-only:"))
+					}
 					return fmt.Errorf("command %q not found in package %q", args[1], first)
 				}
 				remaining = args[1:]
@@ -80,6 +87,9 @@ Examples:
 			}
 			pkgName, target, err = resolveCommand(store, first)
 			if err != nil {
+				if strings.HasPrefix(err.Error(), "skill-only:") {
+					return printSkillOnlyPackage(store, strings.TrimPrefix(err.Error(), "skill-only:"))
+				}
 				return err
 			}
 			remaining = args[1:]
@@ -235,6 +245,9 @@ func resolveCommand(store *pkg.Store, input string) (string, *pkg.Command, error
 
 	// Case 2: exact package name
 	if m, err := store.Get(name); err == nil {
+		if len(m.Commands) == 0 {
+			return "", nil, fmt.Errorf("skill-only:%s", m.Name)
+		}
 		if len(m.Commands) == 1 {
 			return m.Name, &m.Commands[0], nil
 		}
@@ -299,6 +312,26 @@ func resolveCommand(store *pkg.Store, input string) (string, *pkg.Command, error
 	}
 
 	return "", nil, fmt.Errorf("command %q not found in any installed package", name)
+}
+
+func printSkillOnlyPackage(store *pkg.Store, pkgName string) error {
+	skillPath := filepath.Join(store.PackageDir(pkgName), "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		fmt.Printf("Package %q has no runnable commands. Check: anyclaw show %s\n", pkgName, pkgName)
+		return nil
+	}
+	fmt.Printf("[%s] This is a skill package (no direct commands).\n\n", pkgName)
+	fmt.Println("SKILL.md:")
+	fmt.Println("---")
+	fmt.Print(string(data))
+	if !strings.HasSuffix(string(data), "\n") {
+		fmt.Println()
+	}
+	fmt.Println("---")
+	fmt.Printf("\nTo use: read the SKILL.md above and call the scripts directly, or:\n")
+	fmt.Printf("  anyclaw skills %s -o ~/.claude/skills/%s\n", pkgName, pkgName)
+	return nil
 }
 
 func printPackageHelp(m *pkg.Manifest) {
