@@ -550,6 +550,14 @@ func installFromGitHub(repoURL string, customName string) error {
 			continue
 		}
 
+		// Download SKILL.md for skill packages
+		if f.Name == "SKILL.md" {
+			if skillData, skillErr := fetchURL(f.DownloadURL); skillErr == nil {
+				files["SKILL.md"] = skillData
+			}
+			continue
+		}
+		
 		if ext != ".yaml" && ext != ".yml" {
 			continue
 		}
@@ -636,8 +644,12 @@ func installFromGitHub(repoURL string, customName string) error {
 		manifest = tsManifest
 	}
 
+	// Allow skill-only packages (have SKILL.md but no runnable commands)
 	if len(manifest.Commands) == 0 {
-		return fmt.Errorf("no valid commands found in %s/%s", owner, repo)
+		if _, hasSkill := files["SKILL.md"]; !hasSkill {
+			return fmt.Errorf("no valid commands found in %s/%s", owner, repo)
+		}
+		// Skill-only package: install with empty commands
 	}
 
 	store, err := pkg.NewStore()
@@ -1115,9 +1127,8 @@ func installFromClawhub(slug string, customName string, force ...bool) error {
 
 func installFromRepo(repo *registry.Repo, pkgName string, customName string) error {
 	switch repo.Type {
-	case "opencli":
-		// opencli URL format: https://github.com/jackwener/opencli/tree/main/src/clis
-		// Package is at URL/pkgName
+	case "opencli", "github-skills":
+		// GitHub directory repo: package is a subdirectory at URL/pkgName
 		pkgURL := strings.TrimSuffix(repo.URL, "/") + "/" + pkgName
 		return installFromGitHub(pkgURL, customName)
 	case "bb-sites":
