@@ -32,7 +32,7 @@ commands:
             sys.exit(1)
 
   - name: search
-    description: "Web search - returns structured results as markdown"
+    description: "Web search via Jina (requires JINA_API_KEY env var or anyclaw auth jina <key>)"
     args:
       q:
         type: string
@@ -41,20 +41,28 @@ commands:
     script:
       runtime: python3
       code: |
-        import json, sys, urllib.request, urllib.parse
+        import json, sys, os, urllib.request, urllib.parse
         args = json.load(sys.stdin)
         q = args.get("q", "")
         if not q:
             print(json.dumps({"error": "q is required"}))
             sys.exit(1)
+        api_key = os.environ.get("JINA_API_KEY", args.get("_token", ""))
         search_url = "https://s.jina.ai/" + urllib.parse.quote(q)
-        req = urllib.request.Request(search_url, headers={"Accept": "text/plain", "User-Agent": "anyclaw/1.0"})
+        headers = {"Accept": "application/json", "User-Agent": "anyclaw/1.0"}
+        if api_key:
+            headers["Authorization"] = "Bearer " + api_key
+        req = urllib.request.Request(search_url, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
-                content = resp.read().decode("utf-8")
-            print(json.dumps({"query": q, "results": content}))
+                result = json.load(resp)
+            print(json.dumps(result))
         except Exception as e:
-            print(json.dumps({"error": str(e)}))
+            msg = str(e)
+            if "401" in msg:
+                print(json.dumps({"error": "Jina search requires API key. Get one free at https://jina.ai and run: anyclaw auth jina <your-key>  or  export JINA_API_KEY=<your-key>"}))
+            else:
+                print(json.dumps({"error": msg}))
             sys.exit(1)
 
   - name: ground
