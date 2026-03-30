@@ -33,6 +33,7 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		customName, _ := cmd.Flags().GetString("name")
+		force, _ := cmd.Flags().GetBool("force")
 
 		// Handle repo/package prefix format: "opencli/weibo" or "bb-sites/zhihu"
 		if strings.Contains(name, "/") && !strings.HasPrefix(name, "http") && !isLocalFile(name) && !isLocalDir(name) {
@@ -41,6 +42,9 @@ Examples:
 			cfg, err := registry.LoadRepoConfig()
 			if err == nil {
 				if repo, ok := cfg.GetRepo(repoName); ok {
+					if repo.Type == "clawhub" {
+						return installFromClawhub(pkgName, customName, force)
+					}
 					return installFromRepo(repo, pkgName, customName)
 				}
 			}
@@ -943,7 +947,7 @@ func parseTSCommand(filename string, code string) *tsCommandInfo {
 	return info
 }
 
-func installFromClawhub(slug string, customName string) error {
+func installFromClawhub(slug string, customName string, force ...bool) error {
 	// Check if npx is available
 	npxPath, err := exec.LookPath("npx")
 	if err != nil {
@@ -987,10 +991,21 @@ func installFromClawhub(slug string, customName string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	cmd := exec.Command(npxPath, "clawhub@latest", "install", slug, "--dir", tmpDir, "--no-input")
-	cmd.Stderr = os.Stderr
+	forceFlag := len(force) > 0 && force[0]
+	args := []string{"clawhub@latest", "install", slug, "--dir", tmpDir, "--no-input"}
+	if forceFlag {
+		args = append(args, "--force")
+	}
+	cmd := exec.Command(npxPath, args...)
+	var errBuf strings.Builder
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, &errBuf)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("clawhub install failed: %w", err)
+		stderr := errBuf.String()
+		if strings.Contains(stderr, "suspicious") || strings.Contains(stderr, "Use --force") {
+			return fmt.Errorf("skill %q is flagged as suspicious by clawhub.\nReview the skill at https://clawhub.ai/%s then add --force to install anyway:\n  anyclaw install clawhub/%s --force", slug, slug, slug)
+		}
+		return fmt.Errorf("clawhub install failed: %w\n%s", err, stderr)
 	}
 
 	// Find the downloaded files in tmpDir/slug/
@@ -1280,5 +1295,6 @@ func fetchURL(url string) ([]byte, error) {
 
 func init() {
 	installCmd.Flags().StringP("name", "n", "", "Custom package name")
+	installCmd.Flags().Bool("force", false, "Force install even if flagged as suspicious (for clawhub packages)")
 	rootCmd.AddCommand(installCmd)
 }
