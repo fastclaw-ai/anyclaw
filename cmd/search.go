@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -23,12 +21,12 @@ var searchCmd = &cobra.Command{
 
   anyclaw search <keyword>                  Search anyclaw registry first, then all repos
   anyclaw search <keyword> --repo anyclaw   Search the anyclaw registry only
-  anyclaw search <keyword> --repo opencli   Search a specific repo
+  anyclaw search <keyword> --repo myrepo    Search a specific repo
   anyclaw search repo <keyword>             Search configured repos only
   anyclaw search anyclaw <keyword>          Search the anyclaw registry only
 
 Flags:
-  --repo    Filter by repo name (anyclaw, opencli, bb-sites, ...)
+  --repo    Filter by repo name
   --page    Page number (default 1)
   --limit   Results per page (default 20)
   --json    Output as JSON`,
@@ -181,79 +179,13 @@ func searchAllWithOptions(keyword, repoFilter string, page, limit int, jsonOut b
 	return nil
 }
 
-func searchHub(keyword string) error {
-	fmt.Fprintf(os.Stderr, "Searching registry for %q...\n", keyword)
-
-	idx, err := registry.FetchIndex()
-	if err != nil {
-		return err
-	}
-
-	results := idx.Search(keyword)
-	if len(results) == 0 {
-		fmt.Printf("No packages found matching %q.\n", keyword)
-		return nil
-	}
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tDESCRIPTION\tTYPE\n")
-	for _, p := range results {
-		fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, p.Description, p.Type)
-	}
-	w.Flush()
-
-	return nil
-}
-
-func searchRepos(keyword string) error {
-	cfg, err := registry.LoadRepoConfig()
-	if err != nil {
-		return err
-	}
-
-	if len(cfg.Repos) == 0 {
-		fmt.Println("No repositories configured.")
-		return nil
-	}
-
-	kw := strings.ToLower(keyword)
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "NAME\tDESCRIPTION\n")
-	found := 0
-
-	for _, repo := range cfg.Repos {
-		matches, err := searchSingleRepo(&repo, kw)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", repo.Name, err)
-			continue
-		}
-		for _, m := range matches {
-			fmt.Fprintf(w, "%s/%s\t%s\n", repo.Name, m.name, m.description)
-			found++
-		}
-	}
-
-	if found == 0 {
-		fmt.Printf("No packages found matching %q in configured repos.\n", keyword)
-		return nil
-	}
-
-	w.Flush()
-	return nil
-}
-
 type repoMatch struct {
 	name        string
 	description string
 }
 
 func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) {
-	// clawhub: always use live vector search (cache is for offline/fallback only)
-	if repo.Type == "clawhub" {
-		return searchClawhub(keyword)
-	}
-
-	// Other repos: try cache first for fast local search
+	// Try cache first for fast local search
 	if registry.CacheExists(repo.Name) {
 		cache, err := registry.ReadCache(repo.Name)
 		if err == nil {
@@ -271,48 +203,11 @@ func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) 
 
 	// Fall back to live search
 	switch repo.Type {
-	case "opencli", "github-skills":
-		return searchGitHubDir(repo.URL, keyword)
-	case "bb-sites":
+	case "github-skills":
 		return searchGitHubDir(repo.URL, keyword)
 	default:
 		return searchRepoIndex(repo, keyword)
 	}
-}
-
-// searchClawhub searches clawhub for skills matching the keyword.
-func searchClawhub(keyword string) ([]repoMatch, error) {
-	npxPath, err := exec.LookPath("npx")
-	if err != nil {
-		return nil, fmt.Errorf("clawhub search requires Node.js (npx not found)")
-	}
-
-	cmd := exec.Command(npxPath, "clawhub@latest", "search", keyword, "--no-input")
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("clawhub search failed: %w", err)
-	}
-
-	var matches []repoMatch
-	scanner := bufio.NewScanner(strings.NewReader(string(out)))
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-		// Parse output: each line is "<slug>  <name>  (<score>)" or similar
-		// Split on multiple spaces
-		parts := strings.Fields(line)
-		if len(parts) >= 1 {
-			slug := parts[0]
-			desc := ""
-			if len(parts) >= 2 {
-				desc = strings.Join(parts[1:], " ")
-			}
-			matches = append(matches, repoMatch{name: slug, description: desc})
-		}
-	}
-	return matches, nil
 }
 
 // searchGitHubDir lists directories from a GitHub tree URL and matches names.
@@ -391,7 +286,7 @@ func searchRepoIndex(repo *registry.Repo, keyword string) ([]repoMatch, error) {
 }
 
 func init() {
-	searchCmd.Flags().String("repo", "", "Filter by repo name (anyclaw, opencli, bb-sites, ...)")
+	searchCmd.Flags().String("repo", "", "Filter by repo name")
 	searchCmd.Flags().Int("page", 1, "Page number")
 	searchCmd.Flags().Int("limit", 20, "Results per page")
 	searchCmd.Flags().Bool("json", false, "Output as JSON")

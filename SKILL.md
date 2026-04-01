@@ -36,7 +36,7 @@ anyclaw install hackernews
 anyclaw install translator
 
 # Install from GitHub URL
-anyclaw install https://github.com/Astro-Han/opencli-plugin-juejin
+anyclaw install https://github.com/user/repo
 
 # Install a local YAML file
 anyclaw install path/to/spec.yaml

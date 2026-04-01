@@ -93,9 +93,6 @@ func reinstallFromSource(source string, name string) error {
 	//   "url:https://..."
 	//   "cli:/usr/bin/tool"
 	//   "registry:https://..."
-	//   "bb-sites:owner/repo/pkg"
-	//   "opencli:owner/repo" (hypothetical)
-
 	parts := strings.SplitN(source, ":", 2)
 	if len(parts) != 2 {
 		// Try as registry name
@@ -105,8 +102,12 @@ func reinstallFromSource(source string, name string) error {
 	scheme, ref := parts[0], parts[1]
 
 	switch scheme {
-	case "github":
-		return installFromGitHub("https://github.com/"+ref, "")
+	case "github", "github-url":
+		url := ref
+		if !strings.HasPrefix(ref, "http") {
+			url = "https://github.com/" + ref
+		}
+		return installFromGitHub(url, "")
 	case "registry":
 		if strings.HasPrefix(ref, "http") {
 			return installManifestFromURL(ref, "")
@@ -114,14 +115,6 @@ func reinstallFromSource(source string, name string) error {
 		return installFromRegistry(name, "")
 	case "url":
 		return installFromURL(ref, "")
-	case "bb-sites":
-		// ref format: "owner/repo/pkgName"
-		bbParts := strings.SplitN(ref, "/", 3)
-		if len(bbParts) == 3 {
-			repoURL := "https://github.com/" + bbParts[0] + "/" + bbParts[1]
-			return installBBSitesPackage(repoURL, bbParts[2], "")
-		}
-		return fmt.Errorf("invalid bb-sites source: %s", source)
 	case "cli":
 		return installFromCLI(ref, name, "")
 	case "local":

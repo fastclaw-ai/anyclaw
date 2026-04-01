@@ -7,9 +7,8 @@ import (
 	"strings"
 )
 
-// Store manages site adapters from community and private directories.
+// Store manages site adapters from the private directory.
 type Store struct {
-	bbSitesDir string // ~/.anyclaw/bb-sites
 	privateDir string // ~/.anyclaw/sites
 }
 
@@ -20,7 +19,6 @@ func NewStore() (*Store, error) {
 		return nil, fmt.Errorf("get home dir: %w", err)
 	}
 	s := &Store{
-		bbSitesDir: filepath.Join(home, ".anyclaw", "bb-sites"),
 		privateDir: filepath.Join(home, ".anyclaw", "sites"),
 	}
 	// Ensure private dir exists
@@ -30,13 +28,10 @@ func NewStore() (*Store, error) {
 	return s, nil
 }
 
-// BBSitesDir returns the community adapters directory.
-func (s *Store) BBSitesDir() string { return s.bbSitesDir }
-
 // PrivateDir returns the private adapters directory.
 func (s *Store) PrivateDir() string { return s.privateDir }
 
-// Get finds an adapter by "platform/command" name. Private adapters take priority.
+// Get finds an adapter by "platform/command" name.
 func (s *Store) Get(name string) (*SiteAdapter, error) {
 	parts := strings.SplitN(name, "/", 2)
 	if len(parts) != 2 {
@@ -44,37 +39,21 @@ func (s *Store) Get(name string) (*SiteAdapter, error) {
 	}
 	platform, command := parts[0], parts[1]
 
-	// Check private first
-	for _, dir := range []string{s.privateDir, s.bbSitesDir} {
-		path := filepath.Join(dir, platform, command+".js")
-		if _, err := os.Stat(path); err == nil {
-			return ParseAdapter(path)
-		}
+	path := filepath.Join(s.privateDir, platform, command+".js")
+	if _, err := os.Stat(path); err == nil {
+		return ParseAdapter(path)
 	}
 
-	return nil, fmt.Errorf("adapter %q not found. Run: anyclaw site update", name)
+	return nil, fmt.Errorf("adapter %q not found", name)
 }
 
-// List returns all available adapters (private overrides community by name).
+// List returns all available adapters.
 func (s *Store) List() ([]*SiteAdapter, error) {
-	seen := make(map[string]*SiteAdapter)
-
-	// Load community first, then private (private overrides)
-	for _, dir := range []string{s.bbSitesDir, s.privateDir} {
-		adapters, err := scanDir(dir)
-		if err != nil {
-			continue // skip missing dirs
-		}
-		for _, a := range adapters {
-			seen[a.Name] = a
-		}
+	adapters, err := scanDir(s.privateDir)
+	if err != nil {
+		return nil, err
 	}
-
-	result := make([]*SiteAdapter, 0, len(seen))
-	for _, a := range seen {
-		result = append(result, a)
-	}
-	return result, nil
+	return adapters, nil
 }
 
 // ListByPlatform returns adapters for a specific platform.

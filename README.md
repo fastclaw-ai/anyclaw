@@ -29,20 +29,15 @@ cd anyclaw && go build -o anyclaw .
 
 ## Quick Start
 
-### Browse & search packages
+### Search packages
 
 ```bash
-# Browse all available packages from registry
-anyclaw list --all
-
-# Paginate through packages
-anyclaw list --all --page 2
-anyclaw list --all --size 50
-
-# Search by keyword or tag
+# Search by keyword
 anyclaw search news
-anyclaw search chinese
 anyclaw search finance
+
+# Search within a specific repo
+anyclaw search news --repo myrepo
 ```
 
 ### Install packages
@@ -53,12 +48,14 @@ anyclaw install hackernews
 anyclaw install translator
 
 # Install from GitHub URL
-anyclaw install https://github.com/Astro-Han/opencli-plugin-juejin
+anyclaw install https://github.com/user/repo
+
+# Install from a configured repo
+anyclaw install myrepo/pkgname
 
 # Install from local file or directory
 anyclaw install examples/openapi.yaml
 anyclaw install examples/web.yaml
-anyclaw install registry/packages/query-domains
 
 # Wrap a system CLI tool
 anyclaw install docker
@@ -85,7 +82,6 @@ anyclaw auth translator <your-api-key>
 anyclaw run hackernews top --limit 5
 anyclaw run translator translate --q hello --langpair "en|zh"
 anyclaw run query-domains search --keyword anyclaw -a
-anyclaw run query-domains whois --domain anyclaw.com
 
 # Shorthand (package name as subcommand)
 anyclaw hackernews top --limit 5
@@ -97,7 +93,24 @@ anyclaw run hackernews
 anyclaw hackernews --help
 
 # Output as JSON instead of table
-anyclaw reddit hot --limit 5 --json
+anyclaw hackernews top --limit 5 --json
+```
+
+### Manage repos
+
+```bash
+# Add a custom repo
+anyclaw repo add myrepo https://example.com/index.yaml
+anyclaw repo add myskills https://github.com/user/skills/tree/main/packages --type github-skills
+
+# List configured repos
+anyclaw repo list
+
+# Update repo caches (for fast search)
+anyclaw repo update
+
+# Remove a repo
+anyclaw repo remove myrepo
 ```
 
 ### Export to MCP server
@@ -151,7 +164,7 @@ anyclaw skills hackernews -o ~/.claude/skills/hackernews
 
 ## Browser Extension
 
-Some packages require browser access (e.g., Reddit, Bilibili). anyclaw includes its own browser extension and daemon for this.
+Some packages require browser access. anyclaw includes its own browser extension and daemon for this.
 
 ### Setup
 
@@ -280,16 +293,17 @@ commands:
 
 | Command | Description |
 |---------|-------------|
-| `anyclaw list` | List installed packages and commands |
-| `anyclaw list --all` | Browse all available packages from registry |
-| `anyclaw list --all --page N` | Paginate registry packages |
 | `anyclaw search <keyword>` | Search packages by name, description, or tag |
 | `anyclaw install <name\|url\|file\|dir>` | Install a package |
 | `anyclaw uninstall <name>` | Remove a package |
+| `anyclaw list` | List installed packages and commands |
 | `anyclaw run <pkg> <cmd> [flags]` | Run a command |
 | `anyclaw mcp [pkg]` | Start MCP server (stdin/stdout) |
 | `anyclaw skills [pkg]` | Generate SKILL.md for Claude Code |
 | `anyclaw auth <pkg> <api-key>` | Set API key for a package |
+| `anyclaw repo add\|remove\|list\|update` | Manage package repositories |
+| `anyclaw show <pkg>` | Show package details |
+| `anyclaw upgrade [pkg]` | Upgrade installed packages |
 | `anyclaw daemon start\|stop\|status` | Manage browser bridge daemon |
 | `anyclaw version` | Print version |
 | `anyclaw update` | Self-update to latest version |
@@ -307,13 +321,20 @@ anyclaw skills hackernews
 # → ~/.anyclaw/skills/hackernews/SKILL.md
 ```
 
-## Registry
+## Registry & Repos
 
-The [package registry](registry/) indexes 30+ packages from multiple sources:
+The [package registry](registry/) hosts anyclaw-native packages. You can also add custom repos:
 
-- **anyclaw native** — packages maintained in this repo
-- **community** — compatible YAML pipeline packages from the ecosystem
-- **third-party plugins** — community-contributed packages
+```bash
+# Add a GitHub-based skills repo
+anyclaw repo add myskills https://github.com/user/skills/tree/main/packages --type github-skills
+
+# Add an anyclaw index repo
+anyclaw repo add myrepo https://example.com/index.yaml
+
+# Install from a repo
+anyclaw install myrepo/pkgname
+```
 
 To add a package to the registry, submit a PR adding an entry to `registry/index.yaml`.
 
@@ -322,10 +343,6 @@ Packages not in the registry can still be installed directly by URL:
 ```bash
 anyclaw install https://github.com/user/repo
 ```
-
-## Credits
-
-anyclaw's pipeline format is inspired by and compatible with [opencli](https://github.com/jackwener/opencli) by [@jackwener](https://github.com/jackwener). The anyclaw registry references several community packages from the opencli project. Thanks to opencli and its contributors for building a great collection of data tools.
 
 ## License
 

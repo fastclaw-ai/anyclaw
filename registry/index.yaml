@@ -1,9 +1,7 @@
 # anyclaw package registry
-# Only anyclaw-native packages live here.
-# Community packages are available via built-in repos:
-#   anyclaw install opencli/hackernews
-#   anyclaw install bb-sites/zhihu
-#   anyclaw search repo <keyword>
+# Add your packages here or use repos for community packages:
+#   anyclaw repo add myrepo <url>
+#   anyclaw search <keyword>
 
 packages:
   - name: translator

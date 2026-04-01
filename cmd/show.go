@@ -19,7 +19,7 @@ var showCmd = &cobra.Command{
 
 Examples:
   anyclaw show hackernews       Show installed or registry package info
-  anyclaw show opencli/weibo    Show package from a specific repo`,
+  anyclaw show myrepo/pkgname   Show package from a specific repo`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]

@@ -40,8 +40,8 @@ func listLocal() error {
 		fmt.Println("No packages installed.")
 		fmt.Println()
 		fmt.Println("Get started:")
-		fmt.Println("  anyclaw search repo news       # discover packages from repos")
-		fmt.Println("  anyclaw install opencli/hackernews  # install a package")
+		fmt.Println("  anyclaw search news             # discover packages")
+		fmt.Println("  anyclaw install hackernews       # install a package")
 		return nil
 	}
 
@@ -50,21 +50,8 @@ func listLocal() error {
 	for _, m := range manifests {
 		source := m.Source
 		// Simplify source display
-		switch {
-		case strings.HasPrefix(source, "github-url:"), strings.HasPrefix(source, "github:"):
-			source = "github"
-		case strings.HasPrefix(source, "bb-sites:"):
-			source = "bb-sites"
-		case strings.HasPrefix(source, "url:"):
-			source = "url"
-		case strings.HasPrefix(source, "cli:"):
-			source = "cli"
-		case strings.HasPrefix(source, "local:"):
-			source = "local"
-		default:
-			if idx := strings.Index(source, ":"); idx >= 0 {
-				source = source[:idx]
-			}
+		if idx := strings.Index(source, ":"); idx >= 0 {
+			source = source[:idx]
 		}
 
 		// Check for SKILL.md

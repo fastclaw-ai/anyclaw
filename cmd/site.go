@@ -21,13 +21,11 @@ Site adapters run JavaScript inside your real browser, using your existing
 login state — no API keys, no scraping, no anti-bot bypass needed.
 
 Examples:
-  anyclaw site update                   # pull community adapters from GitHub
   anyclaw site list                     # list all available adapters
   anyclaw site list zhihu               # list zhihu adapters
   anyclaw site info zhihu/hot           # show adapter details
   anyclaw site zhihu hot                # run zhihu hot list
-  anyclaw site twitter search "AI"      # search Twitter
-  anyclaw site hackernews top --limit 5 # top 5 HN stories`,
+  anyclaw site twitter search "AI"      # search Twitter`,
 	DisableFlagParsing: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 0 {
@@ -41,8 +39,6 @@ Examples:
 
 		// Route subcommands
 		switch args[0] {
-		case "update":
-			return runSiteUpdate(args[1:])
 		case "list":
 			return runSiteList(args[1:])
 		case "info":
@@ -54,24 +50,6 @@ Examples:
 			return runSiteExec(args[0], args[1:])
 		}
 	},
-}
-
-func runSiteUpdate(_ []string) error {
-	s, err := site.NewStore()
-	if err != nil {
-		return err
-	}
-	fmt.Println("Updating bb-sites from https://github.com/epiral/bb-sites.git...")
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer cancel()
-
-	if err := site.UpdateFromGitHub(ctx, s.BBSitesDir()); err != nil {
-		return err
-	}
-
-	adapters, _ := s.List()
-	fmt.Printf("✓ Done. %d adapters available.\n", len(adapters))
-	return nil
 }
 
 func runSiteList(args []string) error {

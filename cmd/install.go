@@ -33,18 +33,14 @@ Examples:
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		customName, _ := cmd.Flags().GetString("name")
-		force, _ := cmd.Flags().GetBool("force")
 
-		// Handle repo/package prefix format: "opencli/weibo" or "bb-sites/zhihu"
+		// Handle repo/package prefix format: "myrepo/pkgname"
 		if strings.Contains(name, "/") && !strings.HasPrefix(name, "http") && !isLocalFile(name) && !isLocalDir(name) {
 			parts := strings.SplitN(name, "/", 2)
 			repoName, pkgName := parts[0], parts[1]
 			cfg, err := registry.LoadRepoConfig()
 			if err == nil {
 				if repo, ok := cfg.GetRepo(repoName); ok {
-					if repo.Type == "clawhub" {
-						return installFromClawhub(pkgName, customName, force)
-					}
 					return installFromRepo(repo, pkgName, customName)
 				}
 			}
@@ -77,11 +73,6 @@ Examples:
 		} else if regErr.Error() != "not found in registry" {
 			// Registry found it but install failed — return the real error
 			return regErr
-		}
-
-		// Try clawhub as fallback (before system CLI)
-		if err := installFromClawhub(name, customName); err == nil {
-			return nil
 		}
 
 		// System CLI tool (fallback)
@@ -199,7 +190,7 @@ func installFromFile(path string, customName string) error {
 		return installConfig(cfg, data, "local:"+filepath.Base(path), customName)
 	}
 
-	// Try pipeline YAML format (anyclaw native or opencli compatible)
+	// Try pipeline YAML format (anyclaw native)
 	var probe struct {
 		Anyclaw  string           `yaml:"anyclaw"`
 		Site     string           `yaml:"site"`
@@ -207,7 +198,7 @@ func installFromFile(path string, customName string) error {
 		Pipeline []map[string]any `yaml:"pipeline"`
 	}
 	if yamlErr := yaml.Unmarshal(data, &probe); yamlErr == nil && (probe.Pipeline != nil || probe.Site != "" || probe.Anyclaw != "") {
-		return installFromOpencliFile(path, data, customName)
+		return installFromPipelineFile(path, data, customName)
 	}
 
 	return fmt.Errorf("parse spec: %w (unrecognized format)", err)
@@ -222,7 +213,7 @@ type pipelineArg struct {
 	Short       string `yaml:"short"`
 }
 
-func installFromOpencliFile(path string, data []byte, customName string) error {
+func installFromPipelineFile(path string, data []byte, customName string) error {
 	// Try multi-command anyclaw format first
 	var multi struct {
 		Anyclaw     string `yaml:"anyclaw"`
@@ -268,7 +259,7 @@ func installFromOpencliFile(path string, data []byte, customName string) error {
 		return installManifest(manifest, path, data)
 	}
 
-	// Single-command format (opencli compatible)
+	// Single-command format
 	var single struct {
 		Site        string                 `yaml:"site"`
 		Name        string                 `yaml:"name"`
@@ -458,7 +449,6 @@ func installFromGitHub(repoURL string, customName string) error {
 		pkgName = customName
 	} else if subDir == "" {
 		// Strip common prefixes for root repos
-		pkgName = strings.TrimPrefix(pkgName, "opencli-plugin-")
 		pkgName = strings.TrimPrefix(pkgName, "anyclaw-plugin-")
 		pkgName = strings.TrimPrefix(pkgName, "anyclaw-")
 	}
@@ -490,7 +480,7 @@ func installFromGitHub(repoURL string, customName string) error {
 		return fmt.Errorf("parse repo contents: %w", err)
 	}
 
-	// Download all YAML and TS files and parse as opencli commands
+	// Download YAML files and parse as pipeline commands
 	manifest := &pkg.Manifest{
 		Name:        pkgName,
 		Version:     "1.0.0",
@@ -499,56 +489,10 @@ func installFromGitHub(repoURL string, customName string) error {
 		Source:      "github-url:" + repoURL,
 	}
 
-	// Separate manifest for TS commands (uses different adapter)
-	tsManifest := &pkg.Manifest{
-		Name:        pkgName,
-		Version:     "1.0.0",
-		Description: "",
-		Adapter:     "opencli-ts",
-		Source:      "github-url:" + repoURL,
-	}
-
 	files := make(map[string][]byte)
 
 	for _, f := range contents {
 		ext := strings.ToLower(filepath.Ext(f.Name))
-
-		// Handle TypeScript files
-		if ext == ".ts" {
-			// Skip test files
-			if strings.HasSuffix(strings.ToLower(f.Name), ".test.ts") ||
-				strings.HasSuffix(strings.ToLower(f.Name), ".spec.ts") ||
-				strings.HasSuffix(strings.ToLower(f.Name), ".d.ts") {
-				continue
-			}
-
-			data, err := fetchURL(f.DownloadURL)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: skip %s: %v\n", f.Name, err)
-				continue
-			}
-
-			tsCmd := parseTSCommand(f.Name, string(data))
-			if tsCmd == nil {
-				continue
-			}
-
-			if tsManifest.Description == "" && tsCmd.site != "" {
-				tsManifest.Description = tsCmd.site + " data tools"
-			}
-
-			command := pkg.Command{
-				Name:        tsCmd.name,
-				Description: tsCmd.description,
-				Args:        tsCmd.args,
-				Script:      &pkg.ScriptConfig{Runtime: "opencli-ts", Code: string(data)},
-				Columns:     tsCmd.columns,
-			}
-
-			tsManifest.Commands = append(tsManifest.Commands, command)
-			files[f.Name] = data
-			continue
-		}
 
 		// Download SKILL.md for skill packages
 		if f.Name == "SKILL.md" {
@@ -568,8 +512,8 @@ func installFromGitHub(repoURL string, customName string) error {
 			continue
 		}
 
-		// Parse opencli YAML
-		var opencliCmd struct {
+		// Parse pipeline YAML
+		var pipelineCmd struct {
 			Site        string                 `yaml:"site"`
 			Name        string                 `yaml:"name"`
 			Description string                 `yaml:"description"`
@@ -585,32 +529,32 @@ func installFromGitHub(repoURL string, customName string) error {
 			Columns  []string         `yaml:"columns"`
 		}
 
-		if err := yaml.Unmarshal(data, &opencliCmd); err != nil {
+		if err := yaml.Unmarshal(data, &pipelineCmd); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: skip %s: %v\n", f.Name, err)
 			continue
 		}
 
-		if opencliCmd.Name == "" {
+		if pipelineCmd.Name == "" {
 			continue
 		}
 
 		// Set package description from site name
-		if manifest.Description == "" && opencliCmd.Site != "" {
-			manifest.Description = opencliCmd.Site + " data tools"
+		if manifest.Description == "" && pipelineCmd.Site != "" {
+			manifest.Description = pipelineCmd.Site + " data tools"
 		}
 
 		// Check if browser required
 		needsBrowser := true
-		if opencliCmd.Browser != nil && !*opencliCmd.Browser {
+		if pipelineCmd.Browser != nil && !*pipelineCmd.Browser {
 			needsBrowser = false
 		}
-		if opencliCmd.Strategy == "public" {
+		if pipelineCmd.Strategy == "public" {
 			needsBrowser = false
 		}
 
 		// Convert args
 		cmdArgs := make(map[string]pkg.Arg)
-		for name, arg := range opencliCmd.Args {
+		for name, arg := range pipelineCmd.Args {
 			cmdArgs[name] = pkg.Arg{
 				Type:        arg.Type,
 				Required:    arg.Required,
@@ -619,29 +563,21 @@ func installFromGitHub(repoURL string, customName string) error {
 			}
 		}
 
-		desc := opencliCmd.Description
+		desc := pipelineCmd.Description
 		if needsBrowser {
 			desc += " (requires browser)"
 		}
 
 		command := pkg.Command{
-			Name:        opencliCmd.Name,
+			Name:        pipelineCmd.Name,
 			Description: desc,
 			Args:        cmdArgs,
-			Pipeline:    opencliCmd.Pipeline,
-			Columns:     opencliCmd.Columns,
+			Pipeline:    pipelineCmd.Pipeline,
+			Columns:     pipelineCmd.Columns,
 		}
 
 		manifest.Commands = append(manifest.Commands, command)
 		files[f.Name] = data
-	}
-
-	// If we have both YAML and TS commands, merge TS commands into the main manifest
-	if len(manifest.Commands) > 0 && len(tsManifest.Commands) > 0 {
-		manifest.Commands = append(manifest.Commands, tsManifest.Commands...)
-	} else if len(manifest.Commands) == 0 && len(tsManifest.Commands) > 0 {
-		// Only TS commands found — use the TS manifest
-		manifest = tsManifest
 	}
 
 	// Allow skill-only packages (have SKILL.md but no runnable commands)
@@ -877,383 +813,18 @@ func parseSubcommands(name string, helpText string) []pkg.Command {
 	return commands
 }
 
-// tsCommandInfo holds metadata extracted from a TypeScript opencli command.
-type tsCommandInfo struct {
-	site        string
-	name        string
-	description string
-	args        map[string]pkg.Arg
-	columns     []string
-}
 
-// parseTSCommand extracts command metadata from an opencli TypeScript file
-// by regex-matching the cli({...}) call.
-func parseTSCommand(filename string, code string) *tsCommandInfo {
-	// Match cli({ ... }) block
-	reCliCall := regexp.MustCompile(`(?s)cli\(\s*\{(.+)\}\s*\)\s*;?\s*$`)
-	m := reCliCall.FindStringSubmatch(code)
-	if len(m) == 0 {
-		return nil
-	}
-	body := m[1]
-
-	info := &tsCommandInfo{
-		args: make(map[string]pkg.Arg),
-	}
-
-	// Extract string fields
-	reName := regexp.MustCompile(`(?m)^\s*name:\s*"([^"]+)"`)
-	if sm := reName.FindStringSubmatch(body); len(sm) > 1 {
-		info.name = sm[1]
-	}
-	reSite := regexp.MustCompile(`(?m)^\s*site:\s*"([^"]+)"`)
-	if sm := reSite.FindStringSubmatch(body); len(sm) > 1 {
-		info.site = sm[1]
-	}
-	reDesc := regexp.MustCompile(`(?m)^\s*description:\s*"([^"]+)"`)
-	if sm := reDesc.FindStringSubmatch(body); len(sm) > 1 {
-		info.description = sm[1]
-	}
-
-	// Extract columns: ["col1", "col2"]
-	reCols := regexp.MustCompile(`columns:\s*\[([^\]]+)\]`)
-	if sm := reCols.FindStringSubmatch(body); len(sm) > 1 {
-		reStr := regexp.MustCompile(`"([^"]+)"`)
-		for _, cm := range reStr.FindAllStringSubmatch(sm[1], -1) {
-			info.columns = append(info.columns, cm[1])
-		}
-	}
-
-	// Extract args: [{name: "limit", type: "int", default: 30}]
-	reArgs := regexp.MustCompile(`(?s)args:\s*\[(.+?)\]`)
-	if sm := reArgs.FindStringSubmatch(body); len(sm) > 1 {
-		reArg := regexp.MustCompile(`(?s)\{([^}]+)\}`)
-		for _, am := range reArg.FindAllStringSubmatch(sm[1], -1) {
-			argBody := am[1]
-			var argName, argType, argDefault string
-			if nm := reName.FindStringSubmatch(argBody); len(nm) > 1 {
-				argName = nm[1]
-			}
-			reType := regexp.MustCompile(`(?m)type:\s*"([^"]+)"`)
-			if tm := reType.FindStringSubmatch(argBody); len(tm) > 1 {
-				argType = tm[1]
-			}
-			reDefault := regexp.MustCompile(`(?m)default:\s*(\S+)`)
-			if dm := reDefault.FindStringSubmatch(argBody); len(dm) > 1 {
-				argDefault = strings.TrimRight(dm[1], ",")
-			}
-			if argName != "" {
-				info.args[argName] = pkg.Arg{
-					Type:    argType,
-					Default: argDefault,
-				}
-			}
-		}
-	}
-
-	// Fallback name from filename
-	if info.name == "" {
-		info.name = strings.TrimSuffix(filepath.Base(filename), filepath.Ext(filename))
-	}
-
-	return info
-}
-
-func installFromClawhub(slug string, customName string, force ...bool) error {
-	// Check if npx is available
-	npxPath, err := exec.LookPath("npx")
-	if err != nil {
-		return fmt.Errorf("clawhub install requires Node.js (npx not found). Install Node.js: https://nodejs.org")
-	}
-
-	// Check if skill exists via API
-	apiURL := fmt.Sprintf("https://clawhub.ai/api/v1/skills/%s", slug)
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return fmt.Errorf("clawhub API error: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == 404 {
-		return fmt.Errorf("skill %q not found on clawhub", slug)
-	}
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("clawhub API: HTTP %d", resp.StatusCode)
-	}
-
-	var apiResp struct {
-		Skill struct {
-			Slug string `json:"slug"`
-			Name string `json:"name"`
-		} `json:"skill"`
-		LatestVersion struct {
-			Version string `json:"version"`
-		} `json:"latestVersion"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return fmt.Errorf("parse clawhub response: %w", err)
-	}
-
-	fmt.Fprintf(os.Stderr, "Installing from clawhub: %s ...\n", slug)
-
-	// Download via npx clawhub
-	tmpDir, err := os.MkdirTemp("", "anyclaw-clawhub-*")
-	if err != nil {
-		return fmt.Errorf("create temp dir: %w", err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	forceFlag := len(force) > 0 && force[0]
-	args := []string{"clawhub@latest", "install", slug, "--dir", tmpDir, "--no-input"}
-	if forceFlag {
-		args = append(args, "--force")
-	}
-	cmd := exec.Command(npxPath, args...)
-	var errBuf strings.Builder
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = io.MultiWriter(os.Stderr, &errBuf)
-	if err := cmd.Run(); err != nil {
-		stderr := errBuf.String()
-		if strings.Contains(stderr, "suspicious") || strings.Contains(stderr, "Use --force") {
-			return fmt.Errorf("skill %q is flagged as suspicious by clawhub.\nReview the skill at https://clawhub.ai/%s then add --force to install anyway:\n  anyclaw install clawhub/%s --force", slug, slug, slug)
-		}
-		return fmt.Errorf("clawhub install failed: %w\n%s", err, stderr)
-	}
-
-	// Find the downloaded files in tmpDir/slug/
-	srcDir := filepath.Join(tmpDir, slug)
-	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
-		// Try without slug subdirectory
-		srcDir = tmpDir
-	}
-
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		return fmt.Errorf("read clawhub download: %w", err)
-	}
-
-	// Collect all files
-	files := make(map[string][]byte)
-	var collectFiles func(dir string, prefix string) error
-	collectFiles = func(dir string, prefix string) error {
-		dirEntries, err := os.ReadDir(dir)
-		if err != nil {
-			return err
-		}
-		for _, e := range dirEntries {
-			relPath := e.Name()
-			if prefix != "" {
-				relPath = prefix + "/" + e.Name()
-			}
-			fullPath := filepath.Join(dir, e.Name())
-			if e.IsDir() {
-				if err := collectFiles(fullPath, relPath); err != nil {
-					return err
-				}
-			} else {
-				data, err := os.ReadFile(fullPath)
-				if err != nil {
-					return err
-				}
-				files[relPath] = data
-			}
-		}
-		return nil
-	}
-	if err := collectFiles(srcDir, ""); err != nil {
-		return fmt.Errorf("collect clawhub files: %w", err)
-	}
-
-	// Read skill.json for metadata if present
-	pkgName := slug
-	description := ""
-	version := "1.0.0"
-	if data, ok := files["skill.json"]; ok {
-		var skillJSON struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Version     string `json:"version"`
-		}
-		if err := json.Unmarshal(data, &skillJSON); err == nil {
-			// Use slug as package name (not display name) for predictable CLI usage
-			// Display name goes into description prefix
-			if skillJSON.Description != "" {
-				description = skillJSON.Description
-			}
-			if skillJSON.Version != "" {
-				version = skillJSON.Version
-			}
-		}
-	}
-	if customName != "" {
-		pkgName = customName
-	}
-
-	manifest := &pkg.Manifest{
-		Name:        pkgName,
-		Version:     version,
-		Description: description,
-		Source:      "clawhub:" + slug,
-		Commands:    []pkg.Command{},
-	}
-
-	store, err := pkg.NewStore()
-	if err != nil {
-		return err
-	}
-
-	if err := store.Install(manifest, files); err != nil {
-		return err
-	}
-
-	// Count useful info
-	skillCount := 0
-	for name := range files {
-		if strings.ToUpper(filepath.Base(name)) == "SKILL.MD" {
-			skillCount++
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "Installed %s from clawhub (v%s)\n", manifest.Name, version)
-	if description != "" {
-		fmt.Fprintf(os.Stderr, "  %s\n", description)
-	}
-	if skillCount > 0 {
-		fmt.Fprintf(os.Stderr, "  Skills: %d SKILL.md file(s)\n", skillCount)
-	}
-	fmt.Fprintf(os.Stderr, "  Files: %d\n", len(entries))
-	return nil
-}
 
 func installFromRepo(repo *registry.Repo, pkgName string, customName string) error {
 	switch repo.Type {
-	case "opencli", "github-skills":
+	case "github-skills":
 		// GitHub directory repo: package is a subdirectory at URL/pkgName
 		pkgURL := strings.TrimSuffix(repo.URL, "/") + "/" + pkgName
 		return installFromGitHub(pkgURL, customName)
-	case "bb-sites":
-		// bb-sites: install as a site adapter package via browser bridge
-		return installBBSitesPackage(repo.URL, pkgName, customName)
-	case "clawhub":
-		return installFromClawhub(pkgName, customName)
 	default:
 		// Standard anyclaw repo: fetch index and install from it
 		return installFromRepoIndex(repo, pkgName, customName)
 	}
-}
-
-func installBBSitesPackage(repoURL string, pkgName string, customName string) error {
-	// Parse GitHub URL to get owner/repo
-	repoURL = strings.TrimSuffix(repoURL, "/")
-	parts := strings.Split(repoURL, "/")
-	if len(parts) < 5 {
-		return fmt.Errorf("invalid GitHub URL: %s", repoURL)
-	}
-	owner := parts[3]
-	repo := parts[4]
-
-	fmt.Fprintf(os.Stderr, "Fetching %s/%s/%s ...\n", owner, repo, pkgName)
-
-	// List contents of the package directory
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, pkgName)
-	resp, err := http.Get(apiURL)
-	if err != nil {
-		return fmt.Errorf("fetch bb-sites package: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("bb-sites package %q not found (HTTP %d)", pkgName, resp.StatusCode)
-	}
-
-	var contents []struct {
-		Name        string `json:"name"`
-		DownloadURL string `json:"download_url"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&contents); err != nil {
-		return fmt.Errorf("parse bb-sites contents: %w", err)
-	}
-
-	effectiveName := pkgName
-	if customName != "" {
-		effectiveName = customName
-	}
-
-	manifest := &pkg.Manifest{
-		Name:        effectiveName,
-		Version:     "1.0.0",
-		Description: pkgName + " site tools (bb-sites)",
-		Adapter:     "bb-site",
-		Source:      "bb-sites:" + owner + "/" + repo + "/" + pkgName,
-	}
-
-	files := make(map[string][]byte)
-
-	for _, f := range contents {
-		ext := strings.ToLower(filepath.Ext(f.Name))
-		if ext != ".js" {
-			continue
-		}
-
-		data, err := fetchURL(f.DownloadURL)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: skip %s: %v\n", f.Name, err)
-			continue
-		}
-
-		// Parse the JS file to extract command metadata
-		cmdName := strings.TrimSuffix(f.Name, ext)
-		code := string(data)
-
-		// Try to extract domain from the JS (look for URL patterns)
-		domain := extractDomainFromJS(code)
-
-		// Extract the function body — bb-sites typically export a function
-		// Wrap code so it's callable
-		funcCode := code
-
-		command := pkg.Command{
-			Name:        cmdName,
-			Description: fmt.Sprintf("%s from %s", cmdName, pkgName),
-			Script: &pkg.ScriptConfig{
-				Runtime: "bb-site",
-				Code:    funcCode,
-				Domain:  domain,
-			},
-		}
-
-		manifest.Commands = append(manifest.Commands, command)
-		files[f.Name] = data
-	}
-
-	if len(manifest.Commands) == 0 {
-		return fmt.Errorf("no JS commands found in bb-sites/%s", pkgName)
-	}
-
-	store, err := pkg.NewStore()
-	if err != nil {
-		return err
-	}
-
-	if err := store.Install(manifest, files); err != nil {
-		return err
-	}
-
-	fmt.Fprintf(os.Stderr, "Installed %s (%d commands)\n", manifest.Name, len(manifest.Commands))
-	for _, cmd := range manifest.Commands {
-		fmt.Fprintf(os.Stderr, "  - %s: %s\n", cmd.Name, cmd.Description)
-	}
-	return nil
-}
-
-// extractDomainFromJS tries to find a domain from URL literals in JS code.
-func extractDomainFromJS(code string) string {
-	re := regexp.MustCompile(`https?://([a-zA-Z0-9][-a-zA-Z0-9]*\.[a-zA-Z0-9][-a-zA-Z0-9.]+)`)
-	m := re.FindStringSubmatch(code)
-	if len(m) > 1 {
-		return m[1]
-	}
-	return ""
 }
 
 func installFromRepoIndex(repo *registry.Repo, pkgName string, customName string) error {
@@ -1306,6 +877,5 @@ func fetchURL(url string) ([]byte, error) {
 
 func init() {
 	installCmd.Flags().StringP("name", "n", "", "Custom package name")
-	installCmd.Flags().Bool("force", false, "Force install even if flagged as suspicious (for clawhub packages)")
 	rootCmd.AddCommand(installCmd)
 }

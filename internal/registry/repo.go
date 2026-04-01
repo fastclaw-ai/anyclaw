@@ -12,18 +12,12 @@ import (
 type Repo struct {
 	Name string `yaml:"name"`
 	URL  string `yaml:"url"`
-	Type string `yaml:"type"` // "anyclaw", "opencli", "bb-sites"
+	Type string `yaml:"type"` // "anyclaw", "github-skills"
 }
 
 // RepoConfig is the repos.yaml file.
 type RepoConfig struct {
 	Repos []Repo `yaml:"repos"`
-}
-
-// DefaultRepos are built-in repos (always available, no need to add).
-var DefaultRepos = []Repo{
-	{Name: "opencli", URL: "https://github.com/jackwener/opencli/tree/main/src/clis", Type: "opencli"},
-	{Name: "bb-sites", URL: "https://github.com/epiral/bb-sites", Type: "bb-sites"},
 }
 
 func repoConfigPath() (string, error) {
@@ -34,15 +28,15 @@ func repoConfigPath() (string, error) {
 	return filepath.Join(home, ".anyclaw", "repos.yaml"), nil
 }
 
-// LoadRepoConfig loads repos.yaml, returning default config if not found.
+// LoadRepoConfig loads repos.yaml, returning empty config if not found.
 func LoadRepoConfig() (*RepoConfig, error) {
 	path, err := repoConfigPath()
 	if err != nil {
-		return &RepoConfig{Repos: append([]Repo{}, DefaultRepos...)}, nil
+		return &RepoConfig{}, nil
 	}
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		return &RepoConfig{Repos: append([]Repo{}, DefaultRepos...)}, nil
+		return &RepoConfig{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("read repos: %w", err)
@@ -51,20 +45,10 @@ func LoadRepoConfig() (*RepoConfig, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse repos: %w", err)
 	}
-	// Always include default repos (deduplicated by name)
-	existing := make(map[string]bool)
-	for _, r := range cfg.Repos {
-		existing[r.Name] = true
-	}
-	for _, r := range DefaultRepos {
-		if !existing[r.Name] {
-			cfg.Repos = append(cfg.Repos, r)
-		}
-	}
 	return &cfg, nil
 }
 
-// SaveRepoConfig writes repos.yaml (only user-added repos, not defaults).
+// SaveRepoConfig writes repos.yaml.
 func SaveRepoConfig(cfg *RepoConfig) error {
 	path, err := repoConfigPath()
 	if err != nil {
@@ -73,18 +57,7 @@ func SaveRepoConfig(cfg *RepoConfig) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
-	// Filter out default repos — they're always injected on load
-	isDefault := make(map[string]bool)
-	for _, d := range DefaultRepos {
-		isDefault[d.Name] = true
-	}
-	save := &RepoConfig{}
-	for _, r := range cfg.Repos {
-		if !isDefault[r.Name] {
-			save.Repos = append(save.Repos, r)
-		}
-	}
-	data, err := yaml.Marshal(save)
+	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
