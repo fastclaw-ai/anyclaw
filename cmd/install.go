@@ -462,15 +462,11 @@ func installFromGitHub(repoURL string, customName string) error {
 	// List repo contents via GitHub API
 	contentPath := subDir
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, contentPath)
-	resp, err := http.Get(apiURL)
+	resp, err := githubGet(apiURL)
 	if err != nil {
 		return fmt.Errorf("fetch repo: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return fmt.Errorf("fetch repo: HTTP %d", resp.StatusCode)
-	}
 
 	var contents []struct {
 		Name        string `json:"name"`
@@ -817,6 +813,9 @@ func parseSubcommands(name string, helpText string) []pkg.Command {
 
 func installFromRepo(repo *registry.Repo, pkgName string, customName string) error {
 	switch repo.Type {
+	case "github":
+		// GitHub repo: find package in well-known dirs (skills/, packages/, etc.)
+		return installFromGitHubRepo(repo.URL, pkgName, customName)
 	case "github-skills":
 		// GitHub directory repo: package is a subdirectory at URL/pkgName
 		pkgURL := strings.TrimSuffix(repo.URL, "/") + "/" + pkgName
@@ -825,6 +824,42 @@ func installFromRepo(repo *registry.Repo, pkgName string, customName string) err
 		// Standard anyclaw repo: fetch index and install from it
 		return installFromRepoIndex(repo, pkgName, customName)
 	}
+}
+
+// installFromGitHubRepo finds a package inside a GitHub repo by scanning well-known directories.
+func installFromGitHubRepo(repoURL string, pkgName string, customName string) error {
+	repoURL = strings.TrimSuffix(repoURL, "/")
+	parts := strings.Split(repoURL, "/")
+	if len(parts) < 5 {
+		return fmt.Errorf("invalid GitHub URL: %s", repoURL)
+	}
+	owner := parts[3]
+	repo := parts[4]
+
+	// Try well-known package directories first
+	searchDirs := []string{"skills", "packages", "registry", "plugins", "tools"}
+	for _, dir := range searchDirs {
+		apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s/%s", owner, repo, dir, pkgName)
+		status, err := githubHead(apiURL)
+		if err != nil {
+			continue
+		}
+		if status < 400 {
+			// Found it — install from this subdirectory
+			ghURL := fmt.Sprintf("https://github.com/%s/%s/tree/main/%s/%s", owner, repo, dir, pkgName)
+			return installFromGitHub(ghURL, customName)
+		}
+	}
+
+	// Try root-level directory
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, pkgName)
+	status, err := githubHead(apiURL)
+	if err == nil && status < 400 {
+		ghURL := fmt.Sprintf("https://github.com/%s/%s/tree/main/%s", owner, repo, pkgName)
+		return installFromGitHub(ghURL, customName)
+	}
+
+	return fmt.Errorf("package %q not found in %s/%s", pkgName, owner, repo)
 }
 
 func installFromRepoIndex(repo *registry.Repo, pkgName string, customName string) error {

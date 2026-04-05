@@ -12,7 +12,7 @@ import (
 type Repo struct {
 	Name string `yaml:"name"`
 	URL  string `yaml:"url"`
-	Type string `yaml:"type"` // "anyclaw", "github-skills"
+	Type string `yaml:"type"` // "anyclaw", "github", "github-skills"
 }
 
 // RepoConfig is the repos.yaml file.

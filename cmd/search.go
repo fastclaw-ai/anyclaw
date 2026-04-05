@@ -203,7 +203,7 @@ func searchSingleRepo(repo *registry.Repo, keyword string) ([]repoMatch, error) 
 
 	// Fall back to live search
 	switch repo.Type {
-	case "github-skills":
+	case "github", "github-skills":
 		return searchGitHubDir(repo.URL, keyword)
 	default:
 		return searchRepoIndex(repo, keyword)
@@ -227,15 +227,11 @@ func searchGitHubDir(repoURL string, keyword string) ([]repoMatch, error) {
 	}
 
 	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/contents/%s", owner, repo, subDir)
-	resp, err := http.Get(apiURL)
+	resp, err := githubGet(apiURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
 
 	var contents []struct {
 		Name string `json:"name"`
