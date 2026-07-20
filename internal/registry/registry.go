@@ -6,11 +6,13 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 const DefaultRegistryURL = "https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/index.yaml"
+const registryRequestTimeout = 15 * time.Second
 
 // Package describes a package available in the registry.
 type Package struct {
@@ -37,19 +39,10 @@ func FetchIndex() (*Index, error) {
 	var err error
 
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
-		resp, httpErr := http.Get(source)
-		if httpErr != nil {
-			return nil, fmt.Errorf("fetch registry: %w", httpErr)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode >= 400 {
-			return nil, fmt.Errorf("fetch registry: HTTP %d", resp.StatusCode)
-		}
-
-		data, err = io.ReadAll(resp.Body)
+		client := &http.Client{Timeout: registryRequestTimeout}
+		data, err = fetchRemote(source, client)
 		if err != nil {
-			return nil, fmt.Errorf("read registry: %w", err)
+			return nil, err
 		}
 	} else {
 		// Local file path
@@ -65,6 +58,24 @@ func FetchIndex() (*Index, error) {
 	}
 
 	return &idx, nil
+}
+
+func fetchRemote(source string, client *http.Client) ([]byte, error) {
+	resp, err := client.Get(source)
+	if err != nil {
+		return nil, fmt.Errorf("fetch registry: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("fetch registry: HTTP %d", resp.StatusCode)
+	}
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read registry: %w", err)
+	}
+	return data, nil
 }
 
 // Lookup finds a package by exact name.

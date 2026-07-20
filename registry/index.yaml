@@ -35,3 +35,9 @@ packages:
     type: anyclaw
     source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/web-access/web-access.yaml
     tags: [browser, cdp, automation, scraping]
+
+  - name: tweetclaw
+    description: "TweetClaw - X/Twitter source context helpers via Xquik. Not affiliated with X Corp."
+    type: anyclaw
+    source: https://raw.githubusercontent.com/fastclaw-ai/anyclaw/main/registry/packages/tweetclaw/tweetclaw.yaml
+    tags: [twitter, x, tweets, social, openclaw, tweetclaw, agent-tools]
