@@ -100,6 +100,7 @@ Common packages you can install:
 | douban | 豆瓣 movies, books, music | `anyclaw install douban` |
 | reddit | Reddit discussions | `anyclaw install reddit` |
 | twitter | Twitter/X social media | `anyclaw install twitter` |
+| tweetclaw | TweetClaw X/Twitter source context via Xquik. Not affiliated with X Corp. | `anyclaw install tweetclaw` |
 | youtube | YouTube video platform | `anyclaw install youtube` |
 | arxiv | arXiv scientific papers | `anyclaw install arxiv` |
 | wikipedia | Wikipedia encyclopedia | `anyclaw install wikipedia` |

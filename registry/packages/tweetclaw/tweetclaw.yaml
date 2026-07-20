@@ -1,0 +1,177 @@
+# anyclaw format - TweetClaw OpenClaw helpers
+anyclaw: "1.0"
+name: tweetclaw
+version: "1.0.0"
+description: "TweetClaw - X/Twitter source context helpers for OpenClaw agent workflows"
+
+commands:
+  - name: install-help
+    description: "Show TweetClaw install and verification commands for OpenClaw"
+    script:
+      runtime: python3
+      code: |
+        import json
+
+        print(json.dumps({
+            "package": "tweetclaw",
+            "npm": "@xquik/tweetclaw",
+            "published_version": "1.6.37",
+            "install": [
+                "openclaw plugins install npm:@xquik/tweetclaw",
+                "openclaw plugins install npm:@xquik/tweetclaw@1.6.37 --pin"
+            ],
+            "update": "openclaw plugins update tweetclaw",
+            "verify": [
+                "openclaw plugins inspect tweetclaw --runtime --json",
+                "openclaw skills info tweetclaw"
+            ],
+            "links": {
+                "source": "https://github.com/Xquik-dev/tweetclaw",
+                "npm": "https://registry.npmjs.org/@xquik%2ftweetclaw",
+                "openclaw": "https://github.com/openclaw/openclaw"
+            },
+            "jobs": [
+                "scrape tweets",
+                "search tweets",
+                "search tweet replies",
+                "post tweets",
+                "post tweet replies",
+                "follower export",
+                "user lookup",
+                "media upload",
+                "media download",
+                "direct messages",
+                "monitor tweets",
+                "webhooks",
+                "giveaway draws"
+            ],
+            "note": "Use TweetClaw as source evidence for agent workflows. Keep drafting, approval, scheduling, publishing, analytics, and control decisions in the calling workflow. Xquik is an independent third-party service. Not affiliated with X Corp."
+        }))
+
+  - name: source-pack
+    description: "Build a JSON source context packet from an X/Twitter item"
+    args:
+      url:
+        type: string
+        description: "Tweet, profile, search, media, or conversation URL"
+      text:
+        type: string
+        description: "Captured tweet, reply, profile, or thread text"
+      author:
+        type: string
+        description: "Author handle or display label"
+      captured_at:
+        type: string
+        description: "Capture timestamp in ISO 8601 format"
+      intent:
+        type: string
+        default: "source-evidence"
+        description: "How the calling agent should use this packet"
+      notes:
+        type: string
+        description: "Extra context for the calling agent"
+    script:
+      runtime: python3
+      code: |
+        import json
+        import sys
+
+        args = json.load(sys.stdin)
+        url = args.get("url") or ""
+        text = args.get("text") or ""
+        author = args.get("author") or ""
+        captured_at = args.get("captured_at") or ""
+        intent = args.get("intent") or "source-evidence"
+        notes = args.get("notes") or ""
+
+        if not url and not text:
+            print(json.dumps({
+                "error": "Provide at least one of url or text."
+            }))
+            sys.exit(1)
+
+        print(json.dumps({
+            "type": "tweetclaw.source_pack",
+            "intent": intent,
+            "source": {
+                "platform": "x-twitter",
+                "url": url,
+                "author": author,
+                "captured_at": captured_at
+            },
+            "content": {
+                "text": text,
+                "notes": notes
+            },
+            "workflow": {
+                "install": "openclaw plugins install npm:@xquik/tweetclaw",
+                "verify": "openclaw plugins inspect tweetclaw --runtime --json",
+                "guidance": "Treat this as source evidence. Require explicit approval before posting, replying, sending direct messages, uploading media, or running paid actions."
+            }
+        }))
+
+  - name: status
+    description: "Inspect a local TweetClaw OpenClaw plugin installation"
+    args:
+      openclaw:
+        type: string
+        default: "openclaw"
+        description: "OpenClaw command path"
+      plugin:
+        type: string
+        default: "tweetclaw"
+        description: "OpenClaw plugin id"
+      show_raw:
+        type: bool
+        default: "false"
+        description: "Return raw inspect JSON when true"
+    script:
+      runtime: python3
+      code: |
+        import json
+        import shutil
+        import subprocess
+        import sys
+
+        args = json.load(sys.stdin)
+        openclaw = args.get("openclaw") or "openclaw"
+        plugin = args.get("plugin") or "tweetclaw"
+        show_raw = str(args.get("show_raw", "")).lower() in ("1", "true", "yes", "on")
+
+        if not shutil.which(openclaw):
+            print(json.dumps({
+                "installed": False,
+                "error": f"{openclaw} was not found on PATH.",
+                "install": "openclaw plugins install npm:@xquik/tweetclaw",
+                "verify": "openclaw plugins inspect tweetclaw --runtime --json"
+            }))
+            sys.exit(0)
+
+        result = subprocess.run(
+            [openclaw, "plugins", "inspect", plugin, "--runtime", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+
+        response = {
+            "installed": result.returncode == 0,
+            "plugin": plugin,
+            "inspect_command": f"{openclaw} plugins inspect {plugin} --runtime --json",
+            "exit_code": result.returncode
+        }
+
+        if result.returncode != 0:
+            response["hint"] = "Install or update TweetClaw, then restart the OpenClaw Gateway if required."
+            response["install"] = "openclaw plugins install npm:@xquik/tweetclaw"
+        elif show_raw:
+            try:
+                response["raw"] = json.loads(result.stdout)
+            except json.JSONDecodeError:
+                response["raw_text"] = result.stdout.strip()
+        else:
+            response["runtime_json_available"] = bool(result.stdout.strip())
+            response["hint"] = "Run with show_raw=true only when you are comfortable returning local inspect details."
+
+        print(json.dumps(response))
